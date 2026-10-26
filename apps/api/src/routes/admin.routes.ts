@@ -236,12 +236,14 @@ function toAdminReference(r: ReferenceRow): AdminReferenceT {
 }
 
 const PAGE_SIZE = 60;
+/** The review screen loads a whole style at once (about 40 to 60 images), so allow a larger page. */
+const MAX_PAGE_SIZE = 200;
 const ReferenceQuery = z
   .object({
     styleId: z.string().uuid().optional(),
     status: RefStatus.optional(),
     cursor: z.string().uuid().optional(),
-    limit: z.coerce.number().int().min(1).max(PAGE_SIZE).default(PAGE_SIZE),
+    limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(PAGE_SIZE),
   })
   .strict();
 

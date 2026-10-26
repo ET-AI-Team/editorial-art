@@ -125,7 +125,8 @@ describe('generating, reviewing and publishing a style', () => {
     expect((await db.style.findUniqueOrThrow({ where: { id } })).status).toBe('CURATING');
 
     expect(await processQueuedLibraryJobs()).toBe(3);
-    const list = await call(`/admin/references?styleId=${id}`);
+    const list = await call(`/admin/references?styleId=${id}&limit=200`);
+    expect(list.status).toBe(200);
     const items = list.body.items as { status: string; screen: { passed: boolean } | null; description: string }[];
     expect(items).toHaveLength(3);
     expect(items.every((r) => r.status === 'CANDIDATE' && r.screen?.passed && r.description.length > 0)).toBe(true);
