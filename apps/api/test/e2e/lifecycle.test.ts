@@ -52,6 +52,13 @@ describe('paste to publish pack, with fake providers', () => {
     expect(d.costInr).toBeGreaterThan(0);
   });
 
+  test('a live style lists all of its approved references; an unknown style is a 404', async () => {
+    const res = await call(h.base, `/styles/${styleIds.get('ink-wash')}/references`);
+    expect(res.status).toBe(200);
+    expect((res.json.items as unknown[]).length).toBe(4);
+    expect((await call(h.base, '/styles/00000000-0000-4000-8000-000000000000/references')).status).toBe(404);
+  });
+
   test('the same workspace sees it; another workspace gets a 404', async () => {
     expect((await call(h.base, `/requests/${requestId}`, { headers: OTHER_WORKSPACE })).status).toBe(404);
     const list = await call(h.base, '/requests');

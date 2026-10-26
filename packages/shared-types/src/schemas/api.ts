@@ -182,6 +182,11 @@ export const StylesResponse = z.object({
 });
 export type StylesResponse = z.infer<typeof StylesResponse>;
 
+export const StyleReferencesResponse = z.object({
+  items: z.array(z.object({ id: Id, url: z.string().url(), width: z.number().int(), height: z.number().int() })),
+});
+export type StyleReferencesResponse = z.infer<typeof StyleReferencesResponse>;
+
 // ---- admin ---------------------------------------------------------------------------------
 
 export const ReviewReferenceBody = z

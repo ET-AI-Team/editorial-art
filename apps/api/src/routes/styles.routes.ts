@@ -2,6 +2,8 @@ import type { StylesResponse } from '@editorial-art/shared-types';
 import { Router } from 'express';
 import { asyncRoute } from '../lib/async-route';
 import { db } from '../lib/db';
+import { ApiError } from '../lib/errors';
+import { isUuid } from '../lib/ids';
 import { liveStyles, styleBadges } from '../library/styles';
 
 export const stylesRouter = Router();
@@ -47,5 +49,22 @@ stylesRouter.get(
     };
     cache = { at: Date.now(), body };
     res.json(body);
+  })
+);
+
+/** Every approved reference of a LIVE style, so editors can browse a style fully before choosing it. */
+stylesRouter.get(
+  '/styles/:styleId/references',
+  asyncRoute(async (req, res) => {
+    const id = req.params.styleId;
+    if (!id || !isUuid(id)) throw ApiError.notFound('Style not found.');
+    const style = await db.style.findFirst({ where: { id, status: 'LIVE' }, select: { id: true } });
+    if (!style) throw ApiError.notFound('Style not found.');
+    const items = await db.styleReference.findMany({
+      where: { styleId: id, status: 'APPROVED' },
+      orderBy: [{ pickCount: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true, url: true, width: true, height: true },
+    });
+    res.json({ items });
   })
 );
