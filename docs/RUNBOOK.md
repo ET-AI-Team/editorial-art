@@ -205,5 +205,61 @@ Provider keys: rotate in the provider's console, then update `.env` and restart.
 - Daily 02:30 IST: retention purge (`editorial-art-purge.timer`).
 - Every 5 minutes: health and spend alerts (`editorial-art-health.timer`, `health_alert` log lines).
 - Weekly, Monday 03:30 IST: Cloudinary orphan sweep (`editorial-art-sweep.timer`).
-- Weekly: read `bun run report:weekly`; retire never-picked references and generate more for weak styles.
+- Weekly: read `bun run report:weekly`; retire never-picked references. The artist library is frozen: add
+  images only through the steps in section 9.
 - Quarterly: rotate the internal API key (section 6).
+
+## 9. Artist library
+
+The style references are real artists' published images: 48 styles, about 20 images per style from
+three or four artists each, every image stored with its artist and the page it came from. They are
+loaded by script, approved without admin review, and the AI-generated exemplars are retired.
+
+Steps 1 to 3 run on a developer machine with `apps/api/.env` pointing at the local dev database
+(the screen step records its spend there) and at the Cloudinary account the box uses. Step 4 runs
+on the box. `<research>` is the folder of research JSON files (one per family) and `<out>` a working
+folder outside the repo.
+
+1. **Collect** (no model calls): reads each style's top four artists' portfolio and project pages,
+   politely (one request per second per host, robots.txt honoured, 403 or 429 skips the host), and
+   saves re-encoded WebP files with `collect-manifest.json`. Safe to re-run; it resumes.
+   ```bash
+   bun run library:collect -- --in <research> --out <out>
+   ```
+2. **Screen** (one gpt-4.1 call per image, plus a description and embedding for each keeper):
+   keeps images that score 7 or more out of 10 on style with no text, logo, watermark, signature,
+   photo of a real person, explicit content or AI look; the best 8 per artist, at most 24 per style.
+   Writes `library-manifest.json`. Stops before `--max-inr` (default 3000); answers are cached, so a
+   re-run only pays for new images.
+   ```bash
+   bun run library:screen -- --dir <out> --research <research> --max-inr 3000
+   ```
+   Look through `<out>/<family>/<style>/` and delete any manifest entry that should not ship before
+   uploading.
+3. **Upload** to `<EA_CLOUDINARY_FOLDER>/library/<family>/<style>/<artist>/<n>`; writes the Cloudinary
+   URLs back into the manifest. Idempotent. Run it with `EA_CLOUDINARY_FOLDER=editorial-art` (the
+   box's folder), and import within 7 days: an uploaded image no reference row points to counts as
+   an orphan for the weekly sweep after that.
+   ```bash
+   EA_CLOUDINARY_FOLDER=editorial-art bun run library:upload -- --dir <out>
+   ```
+4. **Import** on the box: copy `<out>/library-manifest.json` to the box (it holds URLs, text and
+   embeddings, no image files), seed the 48 styles, then import. Every artwork becomes an APPROVED
+   reference, covers are set to three artists' best, every GENERATED reference is retired, and a
+   style is LIVE exactly when it has 15 approved references. The output lists styles below 15.
+   ```bash
+   bun run seed:styles
+   bun run library:import -- --dir <folder holding library-manifest.json>
+   ```
+   Re-running skips what is already there. `--style <slug>` limits any of the four steps to one style.
+
+**Deleting the generated exemplars.** After the import has been checked in the gallery, the retired
+GENERATED rows and their Cloudinary images can be deleted. It is a dry run unless `--apply` is
+passed. Ask the owner before running `--apply` on the box: it deletes Cloudinary assets.
+```bash
+bun run library:delete-generated            # counts only
+bun run library:delete-generated -- --apply # deletes
+```
+
+Editors can pin one reference when they create a request with a style (`pinnedReferenceId`) or ask
+for another style; every option of that batch then uses the pin and two more by the same artist.
