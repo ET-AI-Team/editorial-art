@@ -22,7 +22,7 @@ import { join, relative } from 'node:path';
 import sharp from 'sharp';
 import { dHash, hammingDistance } from '../../lib/image';
 import { extractImageCandidates, parseRobots, robotsAllows, sniffImageType, upgradeUrl, type ImageCandidate, type RobotsRule } from './collect-lib';
-import { COLLECT_MANIFEST, parseFlags, pool, readJson, readResearch, slugOf, writeJson, type CollectEntry, type ResearchArtist, type ResearchEntry } from './common';
+import { artistName, COLLECT_MANIFEST, parseFlags, pool, readJson, readResearch, slugOf, writeJson, type CollectEntry, type ResearchArtist, type ResearchEntry } from './common';
 
 const USER_AGENT = 'editorial-art-library/1.0 (+ET AI team)';
 const TIMEOUT_MS = 20_000;
@@ -208,8 +208,9 @@ function directUrls(artist: ResearchArtist): { url: string; pageUrl: string | nu
 }
 
 async function collectArtist(ctx: Context, entry: ResearchEntry, artist: ResearchArtist, styleHashes: bigint[]): Promise<ArtistStats> {
-  const slug = slugOf(artist.name);
-  const stats: ArtistStats = { name: artist.name, pages: 0, candidates: 0, saved: 0, existing: 0, reasons: new Map() };
+  const name = artistName(artist.name);
+  const slug = slugOf(name);
+  const stats: ArtistStats = { name, pages: 0, candidates: 0, saved: 0, existing: 0, reasons: new Map() };
   const bump = (reason: string) => stats.reasons.set(reason, (stats.reasons.get(reason) ?? 0) + 1);
   const mine = () => ctx.manifest.filter((m) => m.style === entry.style.slug && m.artist.slug === slug);
   stats.existing = mine().length;
@@ -269,7 +270,7 @@ async function collectArtist(ctx: Context, entry: ResearchEntry, artist: Researc
       ctx.manifest.push({
         family: entry.family,
         style: entry.style.slug,
-        artist: { name: artist.name, slug, portfolioUrl: artist.portfolioUrl },
+        artist: { name, slug, portfolioUrl: artist.portfolioUrl },
         sourceUrl,
         imageUrl: candidate.url,
         file: relative(ctx.out, file),

@@ -26,3 +26,12 @@ describe('which screened artworks a style keeps', () => {
     expect([...per.values()].every((n) => n === 6)).toBe(true);
   });
 });
+
+describe('research files', () => {
+  test('artist names drop a gallery note', async () => {
+    const { artistName, slugOf } = await import('./common');
+    expect(artistName('Mahalaxmi Karn (via Indigo Arts Gallery)')).toBe('Mahalaxmi Karn');
+    expect(artistName('Jamini Roy')).toBe('Jamini Roy');
+    expect(slugOf('Zoë Ølsen-Ray')).toBe('zoe-lsen-ray');
+  });
+});

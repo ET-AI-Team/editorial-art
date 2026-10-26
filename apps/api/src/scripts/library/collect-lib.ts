@@ -170,6 +170,13 @@ export function upgradeUrl(url: string): { url: string; alternates: string[] } {
     best.search = '?format=2500w';
     return best.toString() === url ? { url, alternates: [] } : { url: best.toString(), alternates: [url] };
   }
+  const drupal = /^(.*\/files)\/styles\/[^/]+\/(?:public|private)\/(.+\.(?:jpe?g|png|webp))$/i.exec(u.pathname);
+  if (drupal) {
+    const original = new URL(u.toString());
+    original.pathname = `${drupal[1]}/${drupal[2]}`;
+    original.search = '';
+    return { url: original.toString(), alternates: [url] };
+  }
   const wp = /^(.*)-\d{2,4}x\d{2,4}(\.(?:jpe?g|png|webp))$/i.exec(u.pathname);
   if (wp && /\/wp-content\/uploads\//.test(u.pathname)) {
     const original = new URL(u.toString());
@@ -185,6 +192,8 @@ export function dedupeKey(url: string): string {
   if (behance) return `behance:${behance[3]!.replace(/\.(jpe?g|png|webp|gif)$/i, '')}`;
   const u = new URL(url);
   if (/squarespace/.test(u.hostname)) return `${u.hostname}${u.pathname}`;
+  const drupal = /^(.*\/files)\/styles\/[^/]+\/(?:public|private)\/(.+)$/i.exec(u.pathname);
+  if (drupal) return `${u.hostname}${drupal[1]}/${drupal[2]}`;
   const cloudflare = /^\/cdn-cgi\/image\/[^/]+(\/.*)$/.exec(u.pathname);
   if (cloudflare) return `${u.hostname}${cloudflare[1]}`;
   const wp = /^(.*)-\d{2,4}x\d{2,4}(\.(?:jpe?g|png|webp))$/i.exec(u.pathname);

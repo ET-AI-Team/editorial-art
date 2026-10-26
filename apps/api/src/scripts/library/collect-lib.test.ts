@@ -95,6 +95,10 @@ describe('image candidates', () => {
   test('the same file at another size has one identity', () => {
     expect(dedupeKey('https://mir-s3-cdn-cf.behance.net/project_modules/disp/a.jpg')).toBe(dedupeKey('https://mir-s3-cdn-cf.behance.net/project_modules/max_1200/a.jpg'));
     expect(dedupeKey('https://a.example/cdn-cgi/image/width=900,quality=75/g/p.jpg')).toBe(dedupeKey('https://a.example/cdn-cgi/image/width=1200/g/p.jpg'));
+    expect(upgradeUrl('https://gallery.example/sites/default/files/styles/medium/public/tiger_1.jpg?itok=abc')).toEqual({
+      url: 'https://gallery.example/sites/default/files/tiger_1.jpg',
+      alternates: ['https://gallery.example/sites/default/files/styles/medium/public/tiger_1.jpg?itok=abc'],
+    });
     expect(upgradeUrl('https://cdn.example/a.jpg')).toEqual({ url: 'https://cdn.example/a.jpg', alternates: [] });
     expect(looksLikeUiImage('https://cdn.example/avatar/me.jpg', null)).toBe(true);
     expect(looksLikeUiImage('https://cdn.example/work/harbour.jpg', 1200)).toBe(false);

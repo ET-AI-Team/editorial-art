@@ -34,9 +34,13 @@ export const ResearchStyle = z
   .passthrough();
 export type ResearchStyle = z.infer<typeof ResearchStyle>;
 
-export const ResearchFile = z
-  .object({ families: z.array(z.object({ slug: z.string().min(1), styles: z.array(ResearchStyle) }).passthrough()) })
-  .passthrough();
+const ResearchFamily = z.object({ slug: z.string().min(1), styles: z.array(ResearchStyle) }).passthrough();
+
+/** `{ families: [...] }`, or a single family `{ slug, styles }`. */
+export const ResearchFile = z.union([
+  z.object({ families: z.array(ResearchFamily) }).passthrough(),
+  ResearchFamily.transform((family) => ({ families: [family] })),
+]);
 export type ResearchFile = z.infer<typeof ResearchFile>;
 
 export interface ResearchEntry {
@@ -118,6 +122,11 @@ export function writeJson(path: string, value: unknown): void {
 }
 
 // ---- helpers -------------------------------------------------------------------------------
+
+/** The artist's own name, without a "(via Some Gallery)" note. */
+export function artistName(name: string): string {
+  return name.replace(/\s*\((?:via|at|courtesy of)\b[^)]*\)\s*$/i, '').trim() || name.trim();
+}
 
 export function slugOf(text: string, max = 60): string {
   return (
