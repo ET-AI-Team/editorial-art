@@ -73,7 +73,7 @@ async function main(): Promise<void> {
   let styleId: string | null = null;
   if (args.style) {
     const styles = await api<StylesResponse>('/styles');
-    styleId = styles.families.flatMap((f) => f.styles).find((s) => s.slug === args.style)?.id ?? null;
+    styleId = styles.families.flatMap((f) => f.styles).find((s) => s.slug === args.style && s.available)?.id ?? null;
     if (!styleId) throw new Error(`Style "${args.style}" is not LIVE.`);
   }
 

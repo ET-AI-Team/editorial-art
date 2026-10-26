@@ -4,7 +4,7 @@ import { asyncRoute } from '../lib/async-route';
 import { db } from '../lib/db';
 import { ApiError } from '../lib/errors';
 import { isUuid } from '../lib/ids';
-import { liveStyles, styleBadges } from '../library/styles';
+import { styleBadges, toStyleView } from '../library/styles';
 
 export const stylesRouter = Router();
 
@@ -16,7 +16,19 @@ export function invalidateStylesCache(): void {
   cache = null;
 }
 
-/** LIVE styles grouped by family, with up to three cover images each (Step 7.6). */
+/**
+ * References the public gallery may show for a style: approved ones, and never the old generated
+ * exemplars of a style that is not LIVE (it is being rebuilt from the artist library).
+ */
+function visibleReferences(styleId: string, live: boolean) {
+  return { styleId, status: 'APPROVED' as const, ...(live ? {} : { source: { not: 'GENERATED' as const } }) };
+}
+
+/**
+ * Every family with every style that is not retired (Step 7.6). Only LIVE styles are `available`;
+ * the others show what references they have so far, so the whole library can be browsed while
+ * it fills in. Up to three covers each: the chosen covers, else the most picked references.
+ */
 stylesRouter.get(
   '/styles',
   asyncRoute(async (_req, res) => {
@@ -24,28 +36,41 @@ stylesRouter.get(
       res.json(cache.body);
       return;
     }
-    const [styles, families] = await Promise.all([liveStyles(), db.styleFamily.findMany({ orderBy: { sortOrder: 'asc' } })]);
-    const coverIds = styles.flatMap((s) => s.coverReferenceIds);
-    const covers = new Map((await db.styleReference.findMany({ where: { id: { in: coverIds }, status: 'APPROVED' }, select: { id: true, url: true } })).map((r) => [r.id, r.url]));
+    const [rows, families] = await Promise.all([
+      db.style.findMany({ where: { status: { not: 'RETIRED' } }, include: { family: true }, orderBy: [{ sortOrder: 'asc' }] }),
+      db.styleFamily.findMany({ orderBy: { sortOrder: 'asc' } }),
+    ]);
+    const styles = rows.map(toStyleView);
+    const refs = await db.styleReference.findMany({
+      where: { OR: styles.map((s) => visibleReferences(s.id, s.status === 'LIVE')) },
+      orderBy: [{ pickCount: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true, url: true, styleId: true },
+    });
+    const byStyle = new Map<string, { id: string; url: string }[]>();
+    for (const r of refs) byStyle.set(r.styleId, [...(byStyle.get(r.styleId) ?? []), r]);
     const body: StylesResponse = {
-      families: families
-        .map((f) => ({
-          slug: f.slug as StylesResponse['families'][number]['slug'],
-          label: f.label,
-          styles: styles
-            .filter((s) => s.familySlug === f.slug)
-            .map((s) => ({
+      families: families.map((f) => ({
+        slug: f.slug as StylesResponse['families'][number]['slug'],
+        label: f.label,
+        styles: styles
+          .filter((s) => s.familySlug === f.slug)
+          .map((s) => {
+            const own = byStyle.get(s.id) ?? [];
+            const chosen = s.coverReferenceIds.map((id) => own.find((r) => r.id === id)?.url).filter((u): u is string => !!u);
+            return {
               id: s.id,
               slug: s.slug,
               label: s.label,
               summary: s.summary,
               goodFor: s.goodFor,
               badges: styleBadges(s),
-              covers: s.coverReferenceIds.map((id) => covers.get(id)).filter((u): u is string => !!u).slice(0, 3),
+              covers: (chosen.length ? chosen : own.map((r) => r.url)).slice(0, 3),
               safety: s.safety,
-            })),
-        }))
-        .filter((f) => f.styles.length > 0),
+              available: s.status === 'LIVE',
+              referenceCount: own.length,
+            };
+          }),
+      })),
     };
     cache = { at: Date.now(), body };
     res.json(body);
@@ -53,18 +78,19 @@ stylesRouter.get(
 );
 
 /**
- * Every approved reference of a LIVE style, so editors can browse a style fully before choosing
- * it (and pin one), with the artist and the page it was published on.
+ * Every approved reference of a style that is not retired, so editors can browse a style fully
+ * before choosing it (and pin one), with the artist and the page it was published on. A style
+ * that is not LIVE yet returns what it has so far, possibly nothing.
  */
 stylesRouter.get(
   '/styles/:styleId/references',
   asyncRoute(async (req, res) => {
     const id = req.params.styleId;
     if (!id || !isUuid(id)) throw ApiError.notFound('Style not found.');
-    const style = await db.style.findFirst({ where: { id, status: 'LIVE' }, select: { id: true } });
+    const style = await db.style.findFirst({ where: { id, status: { not: 'RETIRED' } }, select: { id: true, status: true } });
     if (!style) throw ApiError.notFound('Style not found.');
     const rows = await db.styleReference.findMany({
-      where: { styleId: id, status: 'APPROVED' },
+      where: visibleReferences(id, style.status === 'LIVE'),
       orderBy: [{ artist: { name: 'asc' } }, { pickCount: 'desc' }, { createdAt: 'asc' }],
       select: { id: true, url: true, width: true, height: true, sourceUrl: true, artist: { select: { name: true, portfolioUrl: true } } },
     });

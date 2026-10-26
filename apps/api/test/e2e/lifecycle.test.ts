@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
 import type { RequestDetail } from '@editorial-art/shared-types';
-import { RequestDetail as RequestDetailSchema, StyleReferencesResponse } from '@editorial-art/shared-types';
+import { FAMILY_SLUGS, RequestDetail as RequestDetailSchema, StyleReferencesResponse, StylesResponse } from '@editorial-art/shared-types';
+import { invalidateStylesCache } from '../../src/routes/styles.routes';
 import { db } from '../../src/lib/db';
 import { ARTICLE, MEMBER, OTHER_WORKSPACE, artistReferences, call, liveLibrary, startHarness, until, type Harness } from '../harness';
 
@@ -205,6 +206,43 @@ describe('the artist library', () => {
 
     const legacy = StyleReferencesResponse.parse((await call(h.base, `/styles/${styleIds.get('ink-wash')}/references`)).json).items;
     expect(legacy.every((i) => i.artist === null && i.sourceUrl === null)).toBe(true);
+  });
+
+  test('the gallery shows all 12 families and 48 styles; only LIVE ones are available', async () => {
+    // A style still being rebuilt: an old approved generated exemplar must never show, an artist image does.
+    const curating = await db.style.update({ where: { slug: 'madhubani' }, data: { status: 'CURATING' } });
+    await db.styleReference.create({
+      data: { styleId: curating.id, source: 'GENERATED', sourceNote: 'old', url: 'https://res.cloudinary.com/fake/image/upload/v1/test/old-gen.webp', publicId: 'test/old-gen', width: 1024, height: 1024, description: 'x', subjects: [], mood: 'calm', status: 'APPROVED' },
+    });
+    await artistReferences(curating.id, 1, 2, 'madhubani-artist');
+    await db.style.update({ where: { slug: 'warli' }, data: { status: 'RETIRED' } });
+    invalidateStylesCache();
+
+    const body = StylesResponse.parse((await call(h.base, '/styles')).json);
+    expect(body.families.map((f) => f.slug)).toEqual([...FAMILY_SLUGS]);
+    const cards = body.families.flatMap((f) => f.styles);
+    expect(cards).toHaveLength(47);
+    expect(cards.find((c) => c.slug === 'warli')).toBeUndefined();
+    expect(cards.filter((c) => c.available).map((c) => c.slug).sort()).toEqual(['charcoal', 'ink-wash', 'paper-cut', 'swiss-geometric', 'watercolour']);
+    expect(cards.find((c) => c.slug === 'watercolour')).toMatchObject({ available: true, referenceCount: 20 });
+    expect(cards.find((c) => c.slug === 'watercolour')!.covers).toHaveLength(3);
+    const madhubani = cards.find((c) => c.slug === 'madhubani')!;
+    expect(madhubani).toMatchObject({ available: false, referenceCount: 2 });
+    expect(madhubani.covers.some((u) => u.includes('old-gen'))).toBe(false);
+    expect(cards.find((c) => c.slug === 'bauhaus')).toMatchObject({ available: false, referenceCount: 0, covers: [] });
+
+    const refs = StyleReferencesResponse.parse((await call(h.base, `/styles/${curating.id}/references`)).json).items;
+    expect(refs).toHaveLength(2);
+    expect(refs.every((r) => r.artist !== null)).toBe(true);
+    const empty = await db.style.findUniqueOrThrow({ where: { slug: 'bauhaus' } });
+    expect((await call(h.base, `/styles/${empty.id}/references`)).json).toEqual({ items: [] });
+    const retired = await db.style.findUniqueOrThrow({ where: { slug: 'warli' } });
+    expect((await call(h.base, `/styles/${retired.id}/references`)).status).toBe(404);
+
+    // Browsable is not usable: a request in a style that is not LIVE is refused.
+    const refused = await call(h.base, '/requests', { method: 'POST', body: { articleText: ARTICLE, styleId: curating.id } });
+    expect(refused.status).toBe(400);
+    expect(refused.json.error?.code).toBe('STYLE_NOT_LIVE');
   });
 
   test('a pin from another style, or without a style, is refused', async () => {

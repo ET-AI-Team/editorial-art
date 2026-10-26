@@ -176,9 +176,14 @@ export const StyleCard = z.object({
   badges: z.array(z.string()),
   covers: z.array(z.string().url()).max(3),
   safety: StyleSafety,
+  /** True only when the style is LIVE: editors can browse other styles but not use them yet. */
+  available: z.boolean(),
+  /** Approved references the gallery can show. */
+  referenceCount: z.number().int().min(0),
 });
 export type StyleCard = z.infer<typeof StyleCard>;
 
+/** Every family, in order, with every style that is not retired, available or not. */
 export const StylesResponse = z.object({
   families: z.array(z.object({ slug: FamilySlug, label: z.string(), styles: z.array(StyleCard) })),
 });
