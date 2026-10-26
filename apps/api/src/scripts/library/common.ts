@@ -49,7 +49,8 @@ export interface ResearchEntry {
 export function readResearch(path: string): ResearchEntry[] {
   const files = statSync(path).isDirectory()
     ? readdirSync(path)
-        .filter((f) => f.endsWith('.json'))
+        // Work in progress (`_x.json`, `x.partial.json`) is left out.
+        .filter((f) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.partial.json'))
         .sort()
         .map((f) => join(path, f))
     : [path];

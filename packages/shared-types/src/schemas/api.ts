@@ -184,9 +184,19 @@ export const StylesResponse = z.object({
 });
 export type StylesResponse = z.infer<typeof StylesResponse>;
 
-export const StyleReferencesResponse = z.object({
-  items: z.array(z.object({ id: Id, url: z.string().url(), width: z.number().int(), height: z.number().int() })),
+export const StyleReferenceItem = z.object({
+  id: Id,
+  url: z.string().url(),
+  width: z.number().int(),
+  height: z.number().int(),
+  /** Who made it and where it is published; null for references without an artist. */
+  artist: z.object({ name: z.string(), url: z.string().url() }).nullable(),
+  sourceUrl: z.string().url().nullable(),
 });
+export type StyleReferenceItem = z.infer<typeof StyleReferenceItem>;
+
+/** Grouped by artist (by name, references without an artist last), most picked first within each. */
+export const StyleReferencesResponse = z.object({ items: z.array(StyleReferenceItem) });
 export type StyleReferencesResponse = z.infer<typeof StyleReferencesResponse>;
 
 // ---- admin ---------------------------------------------------------------------------------

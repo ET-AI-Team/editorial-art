@@ -21,7 +21,7 @@ export interface PreviewPromptInput {
 }
 
 function peopleClause(input: PreviewPromptInput): string {
-  if (input.style.familySlug === 'photo-based' || !input.style.safety.allowsPeople) {
+  if (input.style.safety.photoreal || !input.style.safety.allowsPeople) {
     return 'People: no people at all; show the idea through objects, places and light.';
   }
   if (input.peopleMode === 'illustrated' && input.likenessNames.length) {
@@ -36,7 +36,7 @@ function peopleClause(input: PreviewPromptInput): string {
 }
 
 export function buildPreviewPrompt(input: PreviewPromptInput): string {
-  const photo = input.style.familySlug === 'photo-based';
+  const photo = input.style.safety.photoreal;
   const avoid = [input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ');
   const parts = [
     input.style.ruleSheet.promptCore,

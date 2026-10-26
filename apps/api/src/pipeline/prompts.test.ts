@@ -1,20 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { buildFinalPrompt, buildPreviewPrompt, type PreviewPromptInput } from './prompts';
 
-const style = (family: string, allowsPeople = true) =>
+const style = (photoreal: boolean, allowsPeople = true) =>
   ({
     id: 's',
     slug: 'ink-wash',
     label: 'Ink and wash',
     summary: '',
-    familySlug: family,
+    familySlug: photoreal ? 'photo-realism' : 'drawing-sketch',
     goodFor: [],
     ruleSheet: { promptCore: 'An editorial illustration in loose ink line with grey wash.', negative: 'photograph, neon' },
-    safety: { allowsPeople, allowsRealPeople: allowsPeople, allowsSensitive: true, photoreal: family === 'photo-based' },
+    safety: { allowsPeople, allowsRealPeople: allowsPeople && !photoreal, allowsSensitive: true, photoreal },
   }) as unknown as PreviewPromptInput['style'];
 
 const base: PreviewPromptInput = {
-  style: style('illustration'),
+  style: style(false),
   direction: { title: 'Two kings', idea: 'Two chess kings face each other.', avoid: ['no flags'], peopleDepicted: [] },
   brief: { tone: 'analytical', desk: 'markets' },
   peopleMode: 'none',
@@ -34,8 +34,8 @@ describe('image prompts', () => {
     expect(p).toContain('Avoid: photograph, neon, no flags.');
   });
 
-  test('photo-based styles never get a people clause that shows people', () => {
-    const p = buildPreviewPrompt({ ...base, style: style('photo-based', false), peopleMode: 'illustrated', likenessNames: ['Asha Rao'] });
+  test('photoreal styles never get a people clause that shows people, whatever their family', () => {
+    const p = buildPreviewPrompt({ ...base, style: style(true, true), peopleMode: 'illustrated', likenessNames: ['Asha Rao'] });
     expect(p).toContain('no people at all');
     expect(p).toContain('objects and places only');
     expect(p).not.toContain('recognisable');

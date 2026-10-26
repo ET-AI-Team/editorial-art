@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
 import type { RequestDetail } from '@editorial-art/shared-types';
-import { RequestDetail as RequestDetailSchema } from '@editorial-art/shared-types';
+import { RequestDetail as RequestDetailSchema, StyleReferencesResponse } from '@editorial-art/shared-types';
 import { db } from '../../src/lib/db';
 import { ARTICLE, MEMBER, OTHER_WORKSPACE, artistReferences, call, liveLibrary, startHarness, until, type Harness } from '../harness';
 
@@ -191,6 +191,20 @@ describe('the artist library', () => {
     expect(options.every((o) => o.referenceIds[0] === other.id && o.referenceIds.every((id) => artistOf(id) === other.artistId))).toBe(true);
     const batch = await db.batch.findUniqueOrThrow({ where: { id: options[0]!.batchId } });
     expect((batch.directionPlan as { pinnedReferenceId: string }).pinnedReferenceId).toBe(other.id);
+  });
+
+  test('a style lists its references with the artist and the page each came from', async () => {
+    const res = await call(h.base, `/styles/${styleIds.get('watercolour')}/references`);
+    expect(res.status).toBe(200);
+    const items = StyleReferencesResponse.parse(res.json).items;
+    expect(items).toHaveLength(20);
+    expect(items[0]!.artist).toEqual({ name: 'Test Artist 0', url: 'https://example.com/artist-0' });
+    expect(items[0]!.sourceUrl).toMatch(/^https:\/\/example\.com\/artist-0\/work-/);
+    const names = items.map((i) => i.artist!.name);
+    expect(names).toEqual([...names].sort());
+
+    const legacy = StyleReferencesResponse.parse((await call(h.base, `/styles/${styleIds.get('ink-wash')}/references`)).json).items;
+    expect(legacy.every((i) => i.artist === null && i.sourceUrl === null)).toBe(true);
   });
 
   test('a pin from another style, or without a style, is refused', async () => {

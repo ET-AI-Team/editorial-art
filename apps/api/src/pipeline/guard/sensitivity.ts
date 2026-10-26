@@ -111,4 +111,4 @@ export function finalSensitivity(modelLevel: SensitivityLevel, floor: Sensitivit
 }
 
 /** Styles that read as satire, never used once a story carries any sensitivity. */
-export const SATIRE_PRONE_SLUGS = new Set(['clay-puppet', 'retro-indian']);
+export const SATIRE_PRONE_SLUGS = new Set(['editorial-cartoon', 'clay-puppet', 'retro-indian']);

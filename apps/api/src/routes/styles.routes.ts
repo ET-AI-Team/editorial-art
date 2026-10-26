@@ -1,4 +1,4 @@
-import type { StylesResponse } from '@editorial-art/shared-types';
+import type { StyleReferenceItem, StylesResponse } from '@editorial-art/shared-types';
 import { Router } from 'express';
 import { asyncRoute } from '../lib/async-route';
 import { db } from '../lib/db';
@@ -52,7 +52,10 @@ stylesRouter.get(
   })
 );
 
-/** Every approved reference of a LIVE style, so editors can browse a style fully before choosing it. */
+/**
+ * Every approved reference of a LIVE style, so editors can browse a style fully before choosing
+ * it (and pin one), with the artist and the page it was published on.
+ */
 stylesRouter.get(
   '/styles/:styleId/references',
   asyncRoute(async (req, res) => {
@@ -60,11 +63,22 @@ stylesRouter.get(
     if (!id || !isUuid(id)) throw ApiError.notFound('Style not found.');
     const style = await db.style.findFirst({ where: { id, status: 'LIVE' }, select: { id: true } });
     if (!style) throw ApiError.notFound('Style not found.');
-    const items = await db.styleReference.findMany({
+    const rows = await db.styleReference.findMany({
       where: { styleId: id, status: 'APPROVED' },
-      orderBy: [{ pickCount: 'desc' }, { createdAt: 'asc' }],
-      select: { id: true, url: true, width: true, height: true },
+      orderBy: [{ artist: { name: 'asc' } }, { pickCount: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true, url: true, width: true, height: true, sourceUrl: true, artist: { select: { name: true, portfolioUrl: true } } },
     });
+    const items: StyleReferenceItem[] = rows
+      .map((r) => ({
+        id: r.id,
+        url: r.url,
+        width: r.width,
+        height: r.height,
+        artist: r.artist ? { name: r.artist.name, url: r.artist.portfolioUrl } : null,
+        sourceUrl: r.sourceUrl,
+      }))
+      // References without an artist go last.
+      .sort((a, b) => Number(a.artist === null) - Number(b.artist === null));
     res.json({ items });
   })
 );
