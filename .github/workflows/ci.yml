@@ -274,7 +274,10 @@ jobs:
       # tolerates the new columns during the seconds between these steps.
       - name: Apply migrations
         if: steps.mode.outputs.dry != 'true'
-        run: bun run --cwd apps/api prisma:deploy
+        run: |
+          # The service reads .env at the repo root; the migration needs the same DATABASE_URL.
+          set -a; . ./.env; set +a
+          bun run --cwd apps/api prisma:deploy
 
       # Allowed by the sudoers drop-in in ops/sudoers-editorial-art, which
       # permits exactly this command and nothing else.
