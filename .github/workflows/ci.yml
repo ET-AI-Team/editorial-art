@@ -29,7 +29,7 @@ env:
   DEPLOY_DIR: /data/products/editorial-art
   SERVICE: editorial-art
   # /ready, not /health: it also proves Postgres and Redis answer.
-  HEALTH_URL: http://127.0.0.1:7701/ready
+  HEALTH_URL: http://127.0.0.1:7202/ready
 
 jobs:
   # ───────────────────────── verify ─────────────────────────

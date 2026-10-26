@@ -42,7 +42,7 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-const base = (process.env.EA_SMOKE_BASE ?? 'http://127.0.0.1:7701').replace(/\/$/, '');
+const base = (process.env.EA_SMOKE_BASE ?? 'http://127.0.0.1:7202').replace(/\/$/, '');
 const key = env().EA_INTERNAL_API_KEYS.split(',')[0]!.trim();
 const headers = {
   'content-type': 'application/json',

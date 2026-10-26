@@ -7,8 +7,8 @@ appear in this file: every key lives only in `/data/products/editorial-art/.env`
 |---|---|
 | Code | `/data/products/editorial-art` (a clean git checkout; nobody edits here) |
 | Service | systemd unit `editorial-art` |
-| API and Socket.IO | `127.0.0.1:7701` (loopback only) |
-| Health | `curl -s http://127.0.0.1:7701/health` (up) and `/ready` (Postgres and Redis answer) |
+| API and Socket.IO | `127.0.0.1:7202` (loopback only) |
+| Health | `curl -s http://127.0.0.1:7202/health` (up) and `/ready` (Postgres and Redis answer) |
 | Logs | `/data/products/editorial-art/logs/editorial-art.log`, plus `-purge`, `-health`, `-sweep` logs |
 | Database | `editorial_art` on the local Postgres, role `editorial_art` |
 | Queues | the shared Redis at 127.0.0.1:6379, key prefix `ea` |
@@ -34,12 +34,12 @@ Show each `sudo` command to the owner before running it.
 sudo /data/products/_infra/bin/new-product editorial-art https://github.com/AbhigyanRaj/editorial-art.git
 ```
 
-`new-product` reserves the next 100-port block (7600). **Port 7601 is already taken** by an
-unregistered process on this box, so editorial-art uses the 7700 block instead. Add this row to
+editorial-art is part of AI Studio, so it uses AI Studio's 7200 block (7202 for the API, 7203 for an optional
+worker-only health port) instead of a block of its own. Add this row to
 `/data/products/_infra/registry.tsv` (tab-separated) and commit it in `_infra`:
 
 ```
-7700	editorial-art	API + Socket.IO + workers	7701	127.0.0.1	editorial-art	http://127.0.0.1:7701/health
+7200	ai-studio	editorial-art API + Socket.IO + workers	7202	127.0.0.1	editorial-art	http://127.0.0.1:7202/health
 ```
 
 ### 1.2 Database
@@ -69,7 +69,7 @@ chgrp et-product-dev /data/products/editorial-art/.env
 Fill in: `DATABASE_URL` (with the generated password), `EA_INTERNAL_API_KEYS`
 (`openssl rand -hex 32`), and the OpenAI, Gemini and Cloudinary keys (copy from the
 design-pipeline `.env` file to file; never paste them into chat or a terminal history). Keep
-`EA_HOST=127.0.0.1` and `EA_PORT=7701`. AI Studio's `.env` gets `EDITORIAL_ART_API_URL`,
+`EA_HOST=127.0.0.1` and `EA_PORT=7202`. AI Studio's `.env` gets `EDITORIAL_ART_API_URL`,
 `EDITORIAL_ART_API_KEY` (the same internal key) and `EDITORIAL_ART_ENABLED=false` at first.
 
 ### 1.4 Install, migrate, seed
@@ -122,9 +122,9 @@ an hour. After the repository is transferred, re-register the runner against the
 ### 1.8 Check it
 
 - `products-status` shows editorial-art healthy.
-- `ss -ltnp | grep 7701` shows `127.0.0.1:7701` only; connecting from another machine fails.
-- `curl -s http://127.0.0.1:7701/ready` returns `{"status":"ready"}`.
-- `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7701/api/v1/styles` returns `401`.
+- `ss -ltnp | grep 7202` shows `127.0.0.1:7202` only; connecting from another machine fails.
+- `curl -s http://127.0.0.1:7202/ready` returns `{"status":"ready"}`.
+- `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7202/api/v1/styles` returns `401`.
 - `bun run smoke:live` passes (costs about Rs 50).
 
 ---
@@ -132,7 +132,7 @@ an hour. After the repository is transferred, re-register the runner against the
 ## 2. Service down
 
 1. `systemctl status editorial-art` and `tail -n 200 /data/products/editorial-art/logs/editorial-art.log`.
-2. `curl -s http://127.0.0.1:7701/ready`: a `failing` list names Postgres or Redis.
+2. `curl -s http://127.0.0.1:7202/ready`: a `failing` list names Postgres or Redis.
 3. A startup line `Invalid configuration:` names the variable that is missing or malformed in `.env`.
 4. A migration problem: `bun run --cwd apps/api prisma:deploy`, then `npx prisma migrate status` from `apps/api`.
 5. Restart: `sudo systemctl restart editorial-art`. If it keeps failing after a deploy, the CI job

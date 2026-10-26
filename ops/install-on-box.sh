@@ -26,7 +26,7 @@ systemctl enable --now editorial-art.service
 systemctl enable --now editorial-art-purge.timer editorial-art-health.timer editorial-art-sweep.timer
 
 for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:7701/ready >/dev/null 2>&1; then echo "editorial-art is ready on 127.0.0.1:7701"; break; fi
+  if curl -fsS http://127.0.0.1:7202/ready >/dev/null 2>&1; then echo "editorial-art is ready on 127.0.0.1:7202"; break; fi
   sleep 2
 done
 systemctl --no-pager --lines=0 status editorial-art.service | head -3

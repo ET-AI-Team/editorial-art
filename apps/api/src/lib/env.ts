@@ -21,9 +21,9 @@ const Schema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
     EA_HOST: z.string().default('127.0.0.1'),
-    EA_PORT: int(7701, 1, 65535),
+    EA_PORT: int(7202, 1, 65535),
     EA_ROLE: z.enum(['all', 'api', 'worker']).default('all'),
-    EA_WORKER_HEALTH_PORT: int(7702, 1, 65535),
+    EA_WORKER_HEALTH_PORT: int(7203, 1, 65535),
 
     DATABASE_URL: z.string().min(1),
     REDIS_URL: z.string().min(1).default('redis://127.0.0.1:6379'),

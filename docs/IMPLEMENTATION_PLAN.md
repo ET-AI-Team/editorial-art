@@ -452,7 +452,7 @@ editorial-art/
 7. routers
 8. a 404 handler
 9. `error-handler`
-2.4.3.2 `server.ts` creates the HTTP server, attaches Socket.IO, starts workers according to `EA_ROLE`, starts the reaper, and listens on `EA_HOST:EA_PORT` (default `127.0.0.1:7601`).
+2.4.3.2 `server.ts` creates the HTTP server, attaches Socket.IO, starts workers according to `EA_ROLE`, starts the reaper, and listens on `EA_HOST:EA_PORT` (default `127.0.0.1:7202`).
 2.4.3.3 Graceful shutdown on `SIGTERM` and `SIGINT`:
 1. Stop accepting new HTTP connections.
 2. `worker.close()` on every BullMQ worker, which waits for active jobs up to 25 seconds.
@@ -2226,7 +2226,7 @@ Editors use ET Articles inside AI Studio with the same login, workspaces and loo
 
 | Variable | Example | Purpose |
 |---|---|---|
-| `EDITORIAL_ART_API_URL` | `http://127.0.0.1:7601/api/v1` | upstream base |
+| `EDITORIAL_ART_API_URL` | `http://127.0.0.1:7202/api/v1` | upstream base |
 | `EDITORIAL_ART_API_KEY` | (secret) | the internal key |
 | `EDITORIAL_ART_ENABLED` | `true` | feature flag; when false the tab shows Coming soon as today |
 
@@ -2561,19 +2561,21 @@ Modelled on design-pipeline's workflow (verify, integration, deploy, with a pinn
 3. `bun install --frozen-lockfile`.
 4. `prisma generate`; `prisma migrate deploy` (migrations are forward-only and additive).
 5. `sudo systemctl restart editorial-art` (a sudoers rule allows exactly this command for the runner user, nothing else).
-6. Health check loop: `GET http://127.0.0.1:7601/ready` up to 60 seconds.
+6. Health check loop: `GET http://127.0.0.1:7202/ready` up to 60 seconds.
 7. On failure: reset to the recorded commit, reinstall, restart, check health again, and fail the job loudly. Migrations are not rolled back (they are additive by rule), which is why the previous code still runs against the new schema.
 
 ## 11.4 The box: product slot
 
 11.4.1 The box keeps a registry of 100-port blocks per product in `/data/products/_infra/registry.tsv`, and a helper `sudo new-product <name> <git-url>` that creates `/data/products/<name>`, sets team permissions and reserves the next block.
-11.4.2 The next free block is **7600**. A process is already listening on `0.0.0.0:7601` that is not in the registry; before reserving, identify it (`sudo ss -ltnp | grep 7601`). If it belongs to someone, leave it and take block **7700** instead (API on 7701). The chosen port goes into `.env`, the unit and AI Studio's `EDITORIAL_ART_API_URL`.
-11.4.3 Commands (each shown to the user before running):
+11.4.2 editorial-art is part of AI Studio, so it takes ports from AI Studio's own block (7200 to 7299) rather than a block of its own: **7202** for the API and Socket.IO, **7203** for the optional worker-only health port. The chosen port goes into `.env`, the CI health check and AI Studio's `EDITORIAL_ART_API_URL`.
+11.4.3 Setup (the same steps `new-product` performs, without reserving a new block):
 
 ```bash
-sudo /data/products/_infra/bin/new-product editorial-art https://github.com/AbhigyanRaj/editorial-art.git
-# then add the registry row:
-# 7600  editorial-art  API + Socket.IO + workers  7601  127.0.0.1  editorial-art  http://127.0.0.1:7601/health
+sudo install -d -o abhigyan.raj -g et-product-dev -m 2775 /data/products/editorial-art
+git clone https://github.com/ET-AI-Team/editorial-art.git /data/products/editorial-art
+sudo /data/products/_infra/bin/share-with-team /data/products/editorial-art
+# registry row, under AI Studio's block:
+# 7200  ai-studio  editorial-art API + Socket.IO + workers  7202  127.0.0.1  editorial-art  http://127.0.0.1:7202/health
 ```
 
 ## 11.5 Database and Redis
@@ -2584,7 +2586,7 @@ sudo /data/products/_infra/bin/new-product editorial-art https://github.com/Abhi
 ## 11.6 Environment on the box
 
 11.6.1 `/data/products/editorial-art/.env`, mode 0660, group `et-product-dev`.
-11.6.2 Values: the DB URL with the generated password; `REDIS_URL`; `EA_HOST=127.0.0.1`; `EA_PORT=7601` (or 7701); a new internal key (`openssl rand -hex 32`); provider keys and Cloudinary credentials copied from the existing design-pipeline `.env` on the box (copied file to file, never displayed); model names; caps with `EA_BUILD_SPEND_CAP_INR=8000` during the build.
+11.6.2 Values: the DB URL with the generated password; `REDIS_URL`; `EA_HOST=127.0.0.1`; `EA_PORT=7202`; a new internal key (`openssl rand -hex 32`); provider keys and Cloudinary credentials copied from the existing design-pipeline `.env` on the box (copied file to file, never displayed); model names; caps with `EA_BUILD_SPEND_CAP_INR=8000` during the build.
 11.6.3 AI Studio's `.env` gets `EDITORIAL_ART_API_URL`, `EDITORIAL_ART_API_KEY` (the same internal key) and `EDITORIAL_ART_ENABLED=false` initially.
 
 ## 11.7 systemd unit (`ops/editorial-art.service`)
@@ -3564,7 +3566,7 @@ Every variable read by `apps/api/src/lib/env.ts`. "Secret" values are never logg
 | `LOG_LEVEL` | no | `info` | no | pino level |
 | `EA_ROLE` | no | `all` | no | `all`, `api` or `worker` (Step 2.4.6) |
 | `EA_HOST` | no | `127.0.0.1` | no | bind address; must stay loopback on the box |
-| `EA_PORT` | no | `7601` | no | HTTP and Socket.IO port (final value set in Step 11) |
+| `EA_PORT` | no | `7202` | no | HTTP and Socket.IO port, in AI Studio's 7200 block |
 | `EA_WORKER_HEALTH_PORT` | no | `7602` | no | health port when `EA_ROLE=worker` |
 | `DATABASE_URL` | yes | none | yes | Postgres `editorial_art` database, runtime |
 | `DIRECT_URL` | yes | none | yes | same database, for migrations |
@@ -3624,7 +3626,7 @@ Every variable read by `apps/api/src/lib/env.ts`. "Secret" values are never logg
 
 | Name | Required | Default | Secret | Purpose |
 |---|---|---|---|---|
-| `EDITORIAL_ART_API_URL` | when enabled | none | no | e.g. `http://127.0.0.1:7601/api/v1` |
+| `EDITORIAL_ART_API_URL` | when enabled | none | no | e.g. `http://127.0.0.1:7202/api/v1` |
 | `EDITORIAL_ART_API_KEY` | when enabled | none | yes | one of editorial-art's `EA_INTERNAL_API_KEYS` |
 | `EDITORIAL_ART_ENABLED` | no | `false` | no | feature flag: when false, ET Articles keeps the coming-soon page and the routes return 404 |
 | `EDITORIAL_ART_TIMEOUT_MS` | no | `15000` | no | proxy timeout for non-streaming calls |
@@ -3704,7 +3706,7 @@ Likelihood and impact: L (low), M (medium), H (high). Owner: "Build" means me du
 | R11 | Style inconsistency within a style | M | M | Build | Rule sheets; bootstrap with approved references; reference picking within style; onStyle in judge | Low `onStyle` scores; reviewers rejecting many candidates |
 | R12 | Redis shared with design-pipeline gets overloaded or flushed | L | M | Ops | Own prefix; jobs are recoverable from DB state by the reaper; modest concurrency | Redis memory alerts; reaper actions rising |
 | R13 | The box runs out of CPU or memory (sharp, Bun, other products) | L | M | Ops | Image work is mostly remote; sharp limited to pack stage with concurrency 4; systemd memory limit on the unit | `free -m`, unit restarts |
-| R14 | Port conflict on the box (an unregistered process listens on 7601) | M | L | Build | Check before deploy; use the 7700 block if needed; register in `_infra/registry.tsv` | `ss -ltnp` during Step 11 |
+| R14 | Port conflict on the box | L | L | Build | Use 7202 and 7203 inside AI Studio's 7200 block, checked free before deploy, and registered in `_infra/registry.tsv` | `ss -ltnp` during Step 11 |
 | R15 | Contract drift between editorial-art and AI Studio | M | M | Build | Shared Zod schemas copied with a contract test in both repos; deploy order editorial-art first; additive changes only | Contract test failure in CI |
 | R16 | Unpublished article text leaks through logs | L | H | Build | Redaction; logs carry length and hash only; a test asserts no article text in logs | Log audit during the security checklist |
 | R17 | Exposed GitHub PAT misused | M | H | User | Rotate the PAT; never stored in files or remotes; repo access reviewed | GitHub security log |
