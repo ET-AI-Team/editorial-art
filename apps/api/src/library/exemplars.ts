@@ -91,7 +91,9 @@ export function screenPrompt(style: StyleView): string {
 Return only JSON:
 { "hasText": boolean, "hasWatermarkOrSignature": boolean, "anatomyOk": boolean,
   "onStyle": 1 | 2 | 3 | 4 | 5, "reason": string }
-"hasText" is true for any letters, digits or marks that read as writing. "anatomyOk" is true when there are no people. "reason" is at most 200 characters.`;
+"hasText" is true for any letters, digits or marks that read as writing, including currency signs printed on objects.
+"anatomyOk" is false only when a person, face or hand is visibly malformed (extra or missing fingers, warped faces, broken limbs). It is true when the people look natural and also true when there are no people. Small, anonymous or silhouetted figures are fine and are never a reason for false.
+${style.safety.allowsPeople ? '' : 'This style must not show people at all: if any person or human figure appears, set "onStyle" to 1.\n'}"reason" is at most 200 characters.`;
 }
 
 const DESCRIBE_SYSTEM = 'Describe this illustration for a search index used to pick style references. Answer only with JSON. Do not mention any artist, brand or real person by name.';
