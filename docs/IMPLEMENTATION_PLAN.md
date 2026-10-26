@@ -54,7 +54,7 @@ Agree, in writing, what is being built, what is not, and the decisions already m
 
 ## 0.2 The product in one paragraph
 
-An editor in AI Studio opens **ET Articles**, pastes the article text, optionally writes a short prompt about what the image should show, and either accepts one of three visual directions the system proposes from the article or picks a style from a library of 24 house styles. Within about 40 seconds four preview illustrations appear, one by one. The editor can ask for **more options**, **try another style**, or **match a previous story**. Batches stack in the same thread so nothing is lost. When the editor chooses one preview, the service makes the full-quality image and a **publish pack**: a 16:9 hero, a 1:1 square, a 1.91:1 social share image and a 9:16 story image, with alt text, a caption and an "AI illustration" credit line. There is no image editing in this version.
+An editor in AI Studio opens **ET Articles**, pastes the article text, optionally writes a short prompt about what the image should show, and either accepts one of three visual directions the system proposes from the article or picks a style from a library of 24 house styles. Within about 40 seconds four preview illustrations appear, one by one. The editor can ask for **more options**, **try another style**, or **match a previous story**. Batches stack in the same thread so nothing is lost. When the editor chooses one preview, the service makes the full-quality image: **one square 1:1 illustration**, delivered as a **publish pack** of that image in WebP and JPG with alt text, a caption and an "AI illustration" credit line. There is no image editing in this version.
 
 ## 0.3 Why it exists
 
@@ -71,7 +71,7 @@ An editor in AI Studio opens **ET Articles**, pastes the article text, optionall
 0.4.5 Quick previews: 4 per batch, streamed to the UI as each one finishes.
 0.4.6 Batch actions: **More options** (same style or direction), **Try another style**, **Match a previous story**.
 0.4.7 Finalize: the chosen preview is rendered at full quality and judged once.
-0.4.8 Publish pack: four sizes, alt text, caption, credit line, in WebP and JPG.
+0.4.8 Publish pack: one square 1:1 image (at the final's resolution, at most 2048 by 2048) in WebP and JPG, with alt text, caption and credit line. Every preview and final is 1:1; there are no other sizes.
 0.4.9 Guardrails: sensitivity detection, a real-person policy, no photo-realistic depiction of news events.
 0.4.10 History per AI Studio workspace.
 0.4.11 Admin: style library management and a reference approval screen.
@@ -104,6 +104,7 @@ An editor in AI Studio opens **ET Articles**, pastes the article text, optionall
 | D11 | Build spend cap | Rs 8,000 for building and testing, enforced in code | Agreed budget |
 | D12 | Box access | The user's SSH account has sudo; every sudo command is shown before it runs | Agreed |
 | D13 | Credentials | Provider keys copied from existing env files, never printed; the GitHub PAT used inline for pushes only, never stored | Least exposure |
+| D14 | Output format | One square 1:1 image | The user's requirement for ET Articles (26 Oct 2026) |
 
 ## 0.7 Constraints
 
@@ -122,7 +123,7 @@ An editor in AI Studio opens **ET Articles**, pastes the article text, optionall
 | Time to first preview on screen | 40 s or less (p50), 70 s (p90) | `Attempt.latencyMs`, the weekly report |
 | Time to all four previews | 75 s or less (p50) | Batch timestamps |
 | Editors find a usable image | 8 of 10 articles in the trial | Launch trial (Step 12) |
-| Cost per article, first batch plus final | Rs 50 or less (p50) | `Request.costInr` |
+| Cost per article, first batch plus final | Rs 45 or less (p50) | `Request.costInr` |
 | Previews blocked by guardrails that should not have been | Under 5% | Weekly report, manual review |
 | Service availability during working hours | 99% | Health checks |
 | Images with text, logos or watermarks shipped as final | 0 | Final judge, weekly audit |
@@ -167,7 +168,7 @@ Fix the moving parts, how they talk, and how a request moves from "pasted" to "d
      |  queues: ea:read, ea:preview, ea:finalize, ea:pack, ea:library
      |
      +--> OpenAI      gpt-4.1 (reading, judging, describing), text-embedding-3-small (embeddings)
-     +--> Google      gemini-3.1-flash-image (previews), gemini-3-pro-image (finals, extensions)
+     +--> Google      gemini-3.1-flash-image (previews), gemini-3-pro-image (finals)
      +--> OpenAI      gpt-image-2 (fallback for finals when Gemini refuses or fails)
      +--> Cloudinary  editorial-art/<requestId>/..., editorial-art/library/...
      +--> Postgres    database editorial_art (own role, own database)
@@ -195,7 +196,7 @@ Fix the moving parts, how they talk, and how a request moves from "pasted" to "d
 5. Directions appear within about 10 seconds; preview tiles fill in over the next 30 to 60 seconds.
 6. Choose a preview, or ask for more options, another style, or a series match. Each request creates a new batch below the previous ones.
 7. Choose **Use this**. The full-quality image and the publish pack are made in about 30 to 60 seconds.
-8. Download the pack or any single size.
+8. Download the square image (JPG or WebP) or the pack ZIP with its alt text, caption and credit.
 
 ## 1.4 State machines
 
@@ -276,14 +277,13 @@ AI Studio API          editorial-art API        ea:read worker         ea:previe
 AI Studio API     editorial-art API     ea:finalize worker                         ea:pack worker
  POST /options/:id/finalize                 |                                           |
   -------------->| PREVIEW_READY -> FINALIZING, enqueue                                  |
-  <-- 202 -------|                          | gemini-3-pro-image, 16:9 at 2K,            |
+  <-- 202 -------|                          | gemini-3-pro-image, 1:1 at 2K,             |
                  |                          |   inputs: the preview + 3 style refs       |
                  |                          | judge (gpt-4.1 vision): text? logo? faces?|
                  |                          |   pass -> FINAL_READY, enqueue pack        |
                  |                          |   fail -> one retry, then FINAL_FAILED     |
-                 |                          |------------------------------------------>| crops (1:1, 1.91:1) in code
-                 |                          |                                           | 9:16: crop if subject fits,
-                 |                          |                                           |   else extend with the model
+                 |                          |------------------------------------------>| square, at most 2048 by 2048
+                 |                          |                                           | WebP + JPG (credit in metadata)
                  |                          |                                           | alt text + caption (gpt-4.1)
                  |                          |                                           | -> PACK_READY, emit
 ```
@@ -357,7 +357,7 @@ editorial-art/
           spend-guard.ts          per-request, per-day and build caps
           ids.ts                  request id format and parsing
           hash.ts                 sha256 helpers
-          image.ts                sharp helpers: metadata, resize, crop, encode
+          image.ts                sharp helpers: metadata, resize, square crop, encode
           text.ts                 article normalisation, sentence split, token estimate
         middleware/
           require-api-key.ts
@@ -389,7 +389,7 @@ editorial-art/
           references/             style reference picking (embedding search + rescoring)
           preview/                prompt builder, run
           finalize/               prompt builder, judge, run
-          pack/                   cropper, extender, alt text, encode
+          pack/                   resize, encode, alt text
           series/                 "match a previous story"
           state.ts                state enums and transition functions
           reaper.ts               recovers stuck rows (1.4.4)
@@ -414,7 +414,7 @@ editorial-art/
       package.json                name @editorial-art/shared-types
       src/
         index.ts
-        enums.ts                  states, families, sizes
+        enums.ts                  states, families, the 1x1 pack size
         schemas/                  zod: requests, batches, options, styles, events
         events.ts                 socket event names and payloads
   ops/
@@ -633,7 +633,7 @@ One per finalized option (re-packing replaces it).
 |---|---|---|
 | id | uuid | |
 | optionId | uuid FK unique | |
-| assets | jsonb | `[{ size:'16x9', width:1600, height:900, webpUrl, jpgUrl, bytes }, ...]` |
+| assets | jsonb | `[{ size:'1x1', width:2048, height:2048, webpUrl, jpgUrl, bytes, method:'resize' }]` (exactly one entry) |
 | altText | text | at most 250 characters |
 | caption | text | at most 200 characters |
 | credit | text | "AI illustration: ET" (configurable) |
@@ -713,7 +713,7 @@ One row per paid model call, success or failure.
 | id | uuid | |
 | requestId | uuid, nullable | null for library work |
 | optionId | uuid, nullable | |
-| stage | text | `read`, `preview`, `finalize`, `judge`, `pack_extend`, `pack_text`, `describe`, `embed`, `exemplar` |
+| stage | text | `read`, `preview`, `finalize`, `judge`, `pack_text`, `describe`, `embed`, `exemplar` |
 | provider | text | `openai`, `google` |
 | model | text | |
 | result | enum | OK, REFUSED, ERROR, TIMEOUT |
@@ -1389,7 +1389,7 @@ Each style's `ruleSheet` (JSON in the DB, readable tables in STYLE_LIBRARY.md) h
 
 ### 5.5.2 Generation (`scripts/generate-exemplars.ts`, admin-triggered, queue `ea:library`)
 
-5.5.2.1 For each style: 30 subjects × 1 image = 30 candidates with `gemini-3.1-flash-image` at 16:9, using the style's `promptCore` and `negative` (Appendix A.5).
+5.5.2.1 For each style: 30 subjects × 1 image = 30 candidates with `gemini-3.1-flash-image` at 1:1, using the style's `promptCore` and `negative` (Appendix A.5).
 5.5.2.2 First pass uses no reference images (there are none yet). Once 5 candidates are approved, the remaining candidates are regenerated **with** those 5 as references, which tightens consistency. This bootstrap is the key quality step.
 5.5.2.3 Each candidate is auto-screened by gpt-4.1 vision (text present? watermark? off-style? broken anatomy?). Auto-rejects are marked `REJECTED` with a reason but still visible to the reviewer.
 5.5.2.4 Cost: 24 styles × about 40 images (30 plus a second pass on about a third) × Rs 6 = about Rs 5,800, within the Rs 8,000 build cap together with testing. The script checks the cap before each image.
@@ -1555,8 +1555,8 @@ Turn an article (plus an optional prompt and style) into three directions and fo
 
 ### 6.5.1 Model and size
 
-6.5.1.1 Primary: `EA_PREVIEW_MODEL` = `gemini-3.1-flash-image`, aspect ratio `16:9` through `generationConfig.imageConfig.aspectRatio` (the same field design-pipeline's `providers/gemini.client.ts` uses).
-6.5.1.2 Output is downscaled with sharp to 1024×576 WebP (quality 80) for the UI; the original is not kept (previews are for choosing).
+6.5.1.1 Primary: `EA_PREVIEW_MODEL` = `gemini-3.1-flash-image`, aspect ratio `1:1` through `generationConfig.imageConfig.aspectRatio` (the same field design-pipeline's `providers/gemini.client.ts` uses).
+6.5.1.2 Output is downscaled with sharp to 1024×1024 WebP (quality 80) for the UI; the original is not kept (previews are for choosing).
 6.5.1.3 Fallback: `EA_PREVIEW_FALLBACK_MODEL` = `gemini-3-pro-image` (6.5.6).
 
 ### 6.5.2 Prompt assembly (Appendix A.2)
@@ -1565,7 +1565,7 @@ The image prompt is built from fixed parts, in this order:
 1. **Style core**: the style's `promptCore` (e.g. "An editorial illustration in loose black ink brush line with grey wash...").
 2. **Scene**: the direction's `idea`, rewritten into a concrete visual description (subject, setting, focal element, mood) by template, not by another model call.
 3. **People clause**: per the people policy (illustrated likeness from attached photos, symbolised, or none).
-4. **Composition rules**: 16:9; one clear focal point; calm area in the top third for a headline overlay; nothing important within 8% of the edges (so the 1:1 and 9:16 crops survive).
+4. **Composition rules**: a square 1:1 frame; one clear focal point; a calm top quarter for an optional headline overlay; nothing important within 6% of the edges.
 5. **Editor prompt**: the editor's request, framed as "The editor also asks: ...", after the safety rules are stated, so it can shape content but not override rules.
 6. **Hard rules**: no text, letters, numbers, logos, watermarks, signatures, UI elements; no photograph look unless the style is photo-based; no real news event depicted as a photo.
 7. **Style negatives**: the style's `negative` list.
@@ -1579,7 +1579,7 @@ The image prompt is built from fixed parts, in this order:
 
 ### 6.5.4 Output checks (cheap, in code)
 
-6.5.4.1 The image decodes; dimensions are at least 1024 on the long side; aspect within 2% of 16:9 (else centre-crop to 16:9).
+6.5.4.1 The image decodes; dimensions are at least 1024 on each side; aspect within 2% of 1:1 (else centre-crop to a square).
 6.5.4.2 Not blank: luminance standard deviation above a floor (catches all-white or all-black failures).
 6.5.4.3 Not a near-duplicate of another option in the same batch: perceptual hash (dHash) Hamming distance at least 8; else the option is regenerated once with a different reference set.
 6.5.4.4 No full judge at preview stage (cost and speed): the judge runs only on finals (6.6.4). Previews are labelled as previews in the UI.
@@ -1611,8 +1611,8 @@ With concurrency 8, four previews start together; flash image p50 is about 15 to
 
 ### 6.6.2 Model
 
-6.6.2.1 Primary: `EA_FINAL_MODEL` = `gemini-3-pro-image` at 16:9, highest available resolution (2K class).
-6.6.2.2 Fallback: `EA_FINAL_FALLBACK_MODEL` = `gpt-image-2` at `1536x1024` then cropped to 16:9 (`1536x864`).
+6.6.2.1 Primary: `EA_FINAL_MODEL` = `gemini-3-pro-image` at 1:1, highest available resolution (2K class).
+6.6.2.2 Fallback: `EA_FINAL_FALLBACK_MODEL` = `gpt-image-2` at `1024x1024`.
 
 ### 6.6.3 Inputs
 
@@ -1643,46 +1643,29 @@ With concurrency 8, four previews start together; flash image p50 is about 15 to
 
 ## 6.7 Stage 5: Publish pack (`pipeline/pack`)
 
-### 6.7.1 Sizes
+ET Articles delivers one square 1:1 image (decision D14). The pack is that image in two formats, with the text an editor needs to publish it. There are no other sizes, no crops and no model calls for extra sizes.
 
-| Key | Size | Use | How |
-|---|---|---|---|
-| `16x9` | 1600×900 | Article hero | Resize of the master |
-| `1x1` | 1080×1080 | Instagram, app cards | Smart crop |
-| `1.91x1` | 1200×628 | Social share (Open Graph) | Smart crop |
-| `9x16` | 1080×1920 | Stories, Shorts | Smart crop if the subject fits, else extend with the model |
+### 6.7.1 The image
 
-### 6.7.2 Smart crop (`pipeline/pack/crop.ts`)
+6.7.1.1 The final master is square already (6.6.2). It is resized to at most 2048 by 2048 (never enlarged) with sharp; this is the only size, key `1x1`, method `resize`.
 
-6.7.2.1 Find the region that matters:
-1. sharp's attention strategy (`position: sharp.strategy.attention`) gives a saliency-weighted crop centre;
-2. if the brief has people or a named object, one cheap gpt-4.1 vision call returns subject boxes (the same idea as design-pipeline's `detectSubjects`), cached on the option.
-6.7.2.2 Choose the crop window of the target aspect that contains all subject boxes with 4% padding and maximises saliency.
-6.7.2.3 If no window of that aspect contains all subject boxes (typical for 9:16 from a wide image), mark the size for extension.
+### 6.7.2 Alt text and caption (one gpt-4.1 text call)
 
-### 6.7.3 Extension for 9:16 (only when needed)
+6.7.2.1 Inputs: the brief's `altTextSeed`, the direction idea, the style label.
+6.7.2.2 Outputs: `altText` (at most 250 characters, describes what is visible, starts with "Illustration of", never says "photo of"), `caption` (at most 200 characters, a neutral line an editor can use or ignore).
+6.7.2.3 Both are checked for length and for banned phrases ("photo of", "photograph of", "image shows a real"). A failing answer is regenerated once; a second failure falls back to `Illustration: <direction title>` and an empty caption.
 
-6.7.3.1 Model: `EA_EXTEND_MODEL` = `gemini-3-pro-image`, aspect `9:16`, input the master, prompt "Extend this illustration upward and downward to a 9:16 canvas in exactly the same style; do not change, move or redraw anything that already exists; add only plausible continuation of the background" (Appendix A.4).
-6.7.3.2 Check: the centre band of the extended image, scaled back, must match the master closely (mean absolute difference under a threshold on a downscaled comparison). If not, fall back to a letterboxed 9:16: the master centred on a blurred, darkened copy of itself (always works, no model).
-6.7.3.3 Cost about Rs 12, only when needed.
+### 6.7.3 Encoding
 
-### 6.7.4 Alt text and caption (one gpt-4.1 text call)
+6.7.3.1 WebP (quality 82) and JPG (quality 85, progressive, sRGB, metadata stripped except a copyright field set to the credit line).
+6.7.3.2 Upload to `editorial-art/<requestPublicId>/pack/<optionId>/1x1.<ext>`.
+6.7.3.3 Store PublishPack with exactly one asset; option `PACK_READY`; emit `option:pack_ready`.
+6.7.3.4 Also produce a ZIP on demand (6.7.4) rather than storing one.
 
-6.7.4.1 Inputs: the brief's `altTextSeed`, the direction idea, the style label, the judge's description.
-6.7.4.2 Outputs: `altText` (at most 250 characters, describes what is visible, never says "photo of"), `caption` (at most 200 characters, a neutral line an editor can use or ignore).
-6.7.4.3 Both are checked for length and for banned phrases ("photo of", "photograph of", "image shows a real").
+### 6.7.4 Download
 
-### 6.7.5 Encoding
-
-6.7.5.1 Each size in WebP (quality 82) and JPG (quality 85, progressive, sRGB, metadata stripped except a copyright/credit IPTC field set to the credit line).
-6.7.5.2 Upload to `editorial-art/<requestPublicId>/pack/<optionId>/<size>.<ext>`.
-6.7.5.3 Store PublishPack; option `PACK_READY`; emit `option:pack_ready`.
-6.7.5.4 Also produce a ZIP on demand (6.7.6) rather than storing one.
-
-### 6.7.6 Download
-
-6.7.6.1 `GET /options/:id/pack` returns the pack JSON (URLs, alt text, caption, credit).
-6.7.6.2 `GET /options/:id/pack.zip` streams a ZIP built on the fly from Cloudinary (sizes plus a `README.txt` with alt text, caption and credit). Bounded: 8 files, 20 MB.
+6.7.4.1 `GET /options/:id/pack` returns the pack JSON (the one asset's URLs and pixel size, alt text, caption, credit).
+6.7.4.2 `GET /options/:id/pack.zip` streams a ZIP built on the fly from Cloudinary: the JPG, the WebP and a `README.txt` with alt text, caption and credit. Bounded: 3 files, 20 MB.
 
 ## 6.8 Series match (`pipeline/series`)
 
@@ -1731,7 +1714,7 @@ Every provider call goes through `instrumentedCall({ stage, provider, model, req
 
 6.11.3.1 Chat (JSON mode) for read, judge, describe, alt text: `POST /v1/chat/completions` with `response_format: { type: 'json_object' }`.
 6.11.3.2 Embeddings: `POST /v1/embeddings`, `text-embedding-3-small`.
-6.11.3.3 Images (fallback finals): `POST /v1/images/edits` with the preview as the input image, `gpt-image-2`, `size: 1536x1024`, `quality: high`.
+6.11.3.3 Images (fallback finals): `POST /v1/images/edits` with the preview as the input image, `gpt-image-2`, `size: 1024x1024`, `quality: high`.
 
 ### 6.11.4 Cloudinary client
 
@@ -1754,7 +1737,7 @@ Deterministic fakes for all three, selected with `EA_FAKE_PROVIDERS=true` or inj
 
 ## 6.13 Tests
 
-- Unit: prompt assembly per style (snapshot), people policy rewrites, sensitivity floor, batch planning table, smart crop window selection, extension check, alt text guards, dHash duplicate check.
+- Unit: prompt assembly per style (snapshot), people policy rewrites, sensitivity floor, batch planning table, square output checks, alt text guards, dHash duplicate check.
 - Integration (Postgres, Redis, fakes): the full lifecycle; concurrency (two workers, one option); cancel mid-batch; spend cap mid-batch; reaper scenarios.
 - Live smoke (manual, capped): `bun run smoke:live -- --article samples/tata.txt --style ink-wash`.
 
@@ -1892,7 +1875,7 @@ Responses: `202 { batchId, seq, status: "QUEUED" }`; `409 BATCH_IN_PROGRESS`; `4
 |---|---|---|
 | `POST /api/v1/options/:optionId/finalize` | Make the full-quality image and pack | `202 { state: "FINALIZING" }`; `409 INVALID_STATE` |
 | `GET /api/v1/options/:optionId` | One option with final and pack | `200` |
-| `GET /api/v1/options/:optionId/pack` | Pack JSON | `200 { assets[], altText, caption, credit }`; `409 PACK_NOT_READY` |
+| `GET /api/v1/options/:optionId/pack` | Pack JSON | `200 { assets: [one 1x1 asset], altText, caption, credit }`; `409 PACK_NOT_READY` |
 | `GET /api/v1/options/:optionId/pack.zip` | ZIP stream | `200 application/zip`; `409` |
 
 ## 7.6 Styles (read)
@@ -1997,15 +1980,14 @@ Copied from design-pipeline's `apps/api/src/lib/pricing.ts` (official per-token 
 | Previews | 4 × flash image (about 1,120 image tokens each, plus references in) | about 24 |
 | Finalize | 1 × pro image | about 12 to 14 |
 | Judge | 1 × gpt-4.1 vision | about 1 |
-| Pack: subject boxes, alt text | 2 × gpt-4.1 small | about 1 |
-| Pack: 9:16 extension (only when needed, about half the time) | 0 or 1 × pro image | 0 to 12 |
-| **First batch plus final** | | **about 40 to 52** |
+| Pack: alt text and caption | 1 × gpt-4.1 small | about 0.5 |
+| **First batch plus final** | | **about 40 to 45** |
 | Each extra batch | 4 previews | about 24 |
 
 ## 8.4 Logs
 
 8.4.1 One JSON line per event with `msg` names that are stable and greppable:
-- `request_created`, `read_done`, `read_failed`, `batch_created`, `preview_done`, `preview_refused`, `preview_failed`, `final_done`, `final_judged`, `final_failed`, `pack_done`, `pack_extended`, `spend_cap_reached`, `spend_warning`, `reaper_action`, `provider_error`.
+- `request_created`, `read_done`, `read_failed`, `batch_created`, `preview_done`, `preview_refused`, `preview_failed`, `final_done`, `final_judged`, `final_failed`, `pack_done`, `spend_cap_reached`, `spend_warning`, `reaper_action`, `provider_error`.
 8.4.2 Fields: `eaRequestId`, `batchId`, `optionId`, `stage`, `model`, `latencyMs`, `costInr`, `result`, `errorCode`.
 8.4.3 Files on the box: systemd journal plus `/data/products/editorial-art/logs/editorial-art.log` (logrotate weekly, keep 8).
 
@@ -2110,8 +2092,8 @@ Every behaviour in this plan is proven by a test that runs without network or sp
 
 ### 9.3.8 pipeline/pack
 
-- Smart crop: subject boxes inside the window for 1:1 and 1.91:1; 9:16 marked for extension when a box cannot fit.
-- Extension check: identical centre passes, shifted centre fails and falls back to letterbox.
+- Square output: an off-square final is centre-cropped to 1:1; a master larger than 2048 is resized down, a smaller one is never enlarged.
+- The pack has exactly one `1x1` asset.
 - Alt text guards: length, banned phrases.
 - Encoding: JPG metadata stripped except the credit field; WebP decodes.
 
@@ -2147,7 +2129,7 @@ Every behaviour in this plan is proven by a test that runs without network or sp
 ### 9.5.2 Lifecycle tests
 
 1. Create a request, wait for `DIRECTIONS_READY`, then 4 `PREVIEW_READY`; assert socket events in order.
-2. Finalize option 2; assert `FINAL_READY`, then `PACK_READY`; pack has 4 sizes × 2 formats, alt text, caption, credit.
+2. Finalize option 2; assert `FINAL_READY`, then `PACK_READY`; pack has one square `1x1` asset in WebP and JPG, alt text, caption, credit; the ZIP holds the JPG, the WebP and `README.txt`.
 3. MORE, ANOTHER_STYLE, SERIES_MATCH batches: assert plans and references.
 4. Cancel during previews: running fakes finish, results discarded, no further jobs.
 
@@ -2379,7 +2361,7 @@ This mirrors how a pasted chunk appears as a card in a chat composer, so the art
 10.4.6.3 **Directions row**: three cards, each with a number, title, the idea in two lines, and its style chip. A small "Why" tooltip shows the one-line reason. Directions are informative, not buttons that must be pressed, because previews already start.
 10.4.6.4 **Batch card**:
 - header: "Batch 1", the style (or "Let the story decide"), time, and status;
-- 4 tiles in a 2 by 2 grid (desktop wide: 4 in a row), 16:9;
+- 4 square 1:1 tiles in a 2 by 2 grid (desktop wide: 4 in a row);
 - empty tiles show a soft skeleton with the direction label and a live elapsed timer; when an image arrives it fades in (one reveal, not bouncing);
 - a failed tile shows a short reason and "Try again" for that tile only (creates a MORE batch scoped to that direction);
 - a blocked tile shows "This idea couldn't be illustrated safely" and nothing else.
@@ -2393,13 +2375,12 @@ This mirrors how a pasted chunk appears as a card in a chat composer, so the art
 
 ### 10.4.7 Finalize and the publish pack
 
-10.4.7.1 **Use this** turns the tile into a "Making the full-quality image" state with a progress line, then "Preparing sizes and alt text".
+10.4.7.1 **Use this** turns the tile into a "Making the full-quality image" state with a progress line, then "Preparing alt text".
 10.4.7.2 When ready, a **Final panel** appears directly under that batch:
-- the 16:9 final, large;
-- a size strip: 16:9, 1:1, 1.91:1, 9:16, each a thumbnail with its pixel size; clicking previews it;
+- the square 1:1 final, large, with its pixel size (for example 2048 × 2048);
 - alt text and caption in read-only fields with Copy buttons;
 - credit line "AI illustration: ET" with Copy;
-- **Download all** (ZIP) as primary; per-size download as secondary (WebP or JPG choice in a small menu).
+- **Download** (ZIP with the JPG, the WebP and the text) as primary; direct JPG and WebP downloads as secondary.
 10.4.7.3 If finalize fails, the tile shows the reason and "Try again"; the preview stays.
 10.4.7.4 Editors can finalize more than one option; each gets its own final panel.
 10.4.7.5 There is no edit button anywhere (out of scope v1).
@@ -2448,7 +2429,7 @@ apps/web/src/
     BatchCard.tsx               header, tiles, actions
     OptionTile.tsx
     OptionViewer.tsx
-    FinalPanel.tsx              sizes, alt text, caption, downloads
+    FinalPanel.tsx              the square final, alt text, caption, downloads
     SeriesPicker.tsx
   hooks/
     useArticleRequest.ts        query plus socket invalidation plus polling fallback
@@ -2465,7 +2446,7 @@ apps/web/src/
 - PromptBlock: counter; optional.
 - StyleGallery: family filter, search, restriction badges, disabled styles with reasons, selection.
 - Thread: reading state, directions render, tiles fill as the mocked query updates, partial and blocked tiles, batch actions disabled while running, new batch appends.
-- Finalize: states, final panel sizes, copy buttons, ZIP download call.
+- Finalize: states, the final panel's square image and pixel size, copy buttons, ZIP and direct JPG and WebP downloads.
 - Flag off shows the coming-soon page.
 
 ## 10.5 Admin side: Style library screen
@@ -2859,7 +2840,7 @@ KNOWN PEOPLE WITH APPROVED LIKENESS PHOTOS (names and aliases)
 
 ## A.2 Preview image prompt (Stage 3, `pipeline/preview/prompt.ts`)
 
-Model: `EA_PREVIEW_MODEL` (gemini-3.1-flash-image), aspect ratio 16:9, with 3 style reference images and up to 4 likeness photos attached as inline image parts after the text part.
+Model: `EA_PREVIEW_MODEL` (gemini-3.1-flash-image), aspect ratio 1:1, with 3 style reference images and up to 4 likeness photos attached as inline image parts after the text part.
 
 The prompt is assembled from 8 parts, in this order, separated by blank lines.
 
@@ -2901,9 +2882,9 @@ People: no identifiable people. Anonymous figures may appear only small, distant
 ### A.2.4 Part 4: Composition rules
 
 ```
-Composition: wide 16:9 frame, one clear focal point, generous negative space. Keep the top third
-calm and uncluttered so a headline could sit over it. Keep every important element at least 8%
-away from all edges so the image survives square and vertical crops.
+Composition: square 1:1 frame, one clear focal point, generous negative space. Keep the top
+quarter calm and uncluttered so an optional headline could sit over it. Keep every important
+element at least 6% away from all edges.
 ```
 
 ### A.2.5 Part 5: Editor prompt (only when present)
@@ -2952,7 +2933,7 @@ palette and visual language closely so the two read as a set, while showing this
 
 ### A.3.1 Finalize image prompt
 
-Model: `EA_FINAL_MODEL` (gemini-3-pro-image), 16:9, highest available resolution. Attached images, in order: the picked preview, the 3 style references, any likeness photos.
+Model: `EA_FINAL_MODEL` (gemini-3-pro-image), 1:1, highest available resolution. Attached images, in order: the picked preview, the 3 style references, any likeness photos.
 
 ```
 Recreate the first attached image at full quality. Keep exactly the same composition, subject,
@@ -2969,7 +2950,7 @@ On the single retry after a judge failure, this line is appended: `Fix only this
 
 ### A.3.2 Fallback finalize (gpt-image-2)
 
-Endpoint `/v1/images/edits`, the picked preview as `image`, `size: 1536x1024`, `quality: high`, and the same text as A.3.1 with the line `The output must be 16:9 content centred in the canvas; it will be cropped to 1536x864.` appended.
+Endpoint `/v1/images/edits`, the picked preview as `image`, `size: 1024x1024`, `quality: high`, and the same text as A.3.1.
 
 ### A.3.3 Judge prompt
 
@@ -3006,17 +2987,9 @@ Return:
 
 The pass rule is applied in code (Step 6.6.4.3), never taken from the model.
 
-## A.4 9:16 extension prompt (Stage 5, `pipeline/pack/extend.ts`)
+## A.4 Removed
 
-Model: `EA_EXTEND_MODEL` (gemini-3-pro-image), aspect 9:16, the 16:9 master attached.
-
-```
-Extend this illustration upward and downward to fill a tall 9:16 canvas, in exactly the same
-style, medium, palette and texture. Do not change, move, redraw or recolour anything that already
-exists in the image; it must sit unchanged in the middle of the new canvas. Add only a plausible,
-quiet continuation of the background above and below (sky, wall, ground, paper texture). Do not
-add new people, objects, text, letters, numbers, logos or watermarks.
-```
+The 9:16 extension prompt was removed with decision D14: ET Articles makes one square 1:1 image, so no size is ever extended.
 
 ## A.5 Style core usage and exemplar generation (Step 5.5)
 
@@ -3028,7 +3001,7 @@ add new people, objects, text, letters, numbers, logos or watermarks.
 
 ### A.5.2 Exemplar prompt, first pass (no references)
 
-Model: `EA_PREVIEW_MODEL`, 16:9.
+Model: `EA_PREVIEW_MODEL`, 1:1.
 
 ```
 {{style.promptCore}}
@@ -3083,21 +3056,11 @@ Return only JSON:
 Do not mention any artist, brand or real person by name.
 ```
 
-### A.6.2 Subject boxes for smart crop (Step 6.7.2)
+### A.6.2 Removed
 
-Model: gpt-4.1 vision, JSON mode, temperature 0.
+Subject boxes for smart cropping were removed with decision D14: the single square image is never cropped to another size.
 
-```
-Find the important subjects in this illustration: people, faces, and the main object.
-Return only JSON:
-{ "boxes": [ { "label": string, "x": number, "y": number, "w": number, "h": number } ] }
-Coordinates are fractions of the image width and height, from 0 to 1, top-left origin.
-Return at most 6 boxes. Return an empty array if nothing stands out.
-```
-
-Boxes are clamped to [0, 1], degenerate boxes (width or height under 0.01) are dropped.
-
-### A.6.3 Alt text and caption (Step 6.7.4)
+### A.6.3 Alt text and caption (Step 6.7.2)
 
 Model: gpt-4.1, JSON mode, temperature 0.3.
 
@@ -3108,7 +3071,6 @@ The image is an illustration, not a photograph.
 Story summary: {{brief.altTextSeed}}
 Illustration idea: {{direction.idea}}
 Style: {{style.label}}
-What the checker saw: {{judge.notes or description}}
 
 Return only JSON:
 {
@@ -3334,14 +3296,6 @@ export const ExemplarScreen = z.object({
   onStyle: z.number().int().min(1).max(5),
   reason: z.string().max(200),
 }).strict();
-
-export const SubjectBoxes = z.object({
-  boxes: z.array(z.object({
-    label: z.string().max(40),
-    x: z.number().min(0).max(1), y: z.number().min(0).max(1),
-    w: z.number().min(0).max(1), h: z.number().min(0).max(1),
-  }).strict()).max(6),
-}).strict();
 ```
 
 ## B.6 API bodies (`schemas/api.ts`)
@@ -3483,16 +3437,16 @@ export const CreateBatchResponse = z.object({
 
 ```ts
 export const PackAsset = z.object({
-  size: z.enum(['16x9', '1x1', '1.91x1', '9x16']),
+  size: z.enum(['1x1']),
   width: z.number().int(), height: z.number().int(),
   webpUrl: z.string().url(), jpgUrl: z.string().url(),
   bytes: z.object({ webp: z.number().int(), jpg: z.number().int() }),
-  method: z.enum(['resize', 'crop', 'extend', 'letterbox']),
+  method: z.enum(['resize']),
 });
 export const PackDto = z.object({
   optionId: Id,
   status: z.enum(['PENDING', 'READY', 'FAILED']),
-  assets: z.array(PackAsset),
+  assets: z.array(PackAsset).length(1),
   altText: z.string(),
   caption: z.string(),
   credit: z.string(),
@@ -3625,14 +3579,13 @@ Every variable read by `apps/api/src/lib/env.ts`. "Secret" values are never logg
 | `CLOUDINARY_API_SECRET` | yes (unless fakes) | none | yes | Cloudinary |
 | `EA_CLOUDINARY_FOLDER` | no | `editorial-art` | no | root folder for all assets |
 | `EA_READ_MODEL` | yes | (`gpt-4.1`) | no | read call |
-| `EA_JUDGE_MODEL` | yes | (`gpt-4.1`) | no | final judge, exemplar screen, subject boxes, descriptions |
+| `EA_JUDGE_MODEL` | yes | (`gpt-4.1`) | no | final judge, exemplar screen, descriptions |
 | `EA_TEXT_MODEL` | yes | (`gpt-4.1`) | no | alt text and caption |
 | `EA_EMBED_MODEL` | yes | (`text-embedding-3-small`) | no | embeddings, 1536 dimensions |
 | `EA_PREVIEW_MODEL` | yes | (`gemini-3.1-flash-image`) | no | previews and exemplars |
 | `EA_PREVIEW_FALLBACK_MODEL` | yes | (`gemini-3-pro-image`) | no | preview fallback after refusal or failure |
 | `EA_FINAL_MODEL` | yes | (`gemini-3-pro-image`) | no | finals |
 | `EA_FINAL_FALLBACK_MODEL` | yes | (`gpt-image-2`) | no | final fallback |
-| `EA_EXTEND_MODEL` | yes | (`gemini-3-pro-image`) | no | 9:16 extension |
 | `EA_FAKE_PROVIDERS` | no | `false` | no | use in-memory fakes for all providers |
 | `EA_TEST_CRASH_AT` | no | unset | no | tests only: throws inside a worker after the named stage to simulate a crash (Step 9.5.4); refused at startup when `NODE_ENV=production` |
 | `EA_FAKE_LATENCY_MS` | no | `300` | no | simulated latency for fakes |
@@ -3662,7 +3615,7 @@ Every variable read by `apps/api/src/lib/env.ts`. "Secret" values are never logg
 | `EA_PROMPT_MAX_CHARS` | no | `2000` | no | validation |
 | `EA_ARTICLE_RETENTION_DAYS` | no | `90` | no | Step 4.10.1 |
 | `EA_PREVIEW_RETENTION_DAYS` | no | `180` | no | unpicked previews (Step 4.10.3) |
-| `EA_CREDIT_LINE` | no | `AI illustration: ET` | no | publish pack credit and IPTC field |
+| `EA_CREDIT_LINE` | no | `AI illustration: ET` | no | publish pack credit and JPG copyright field |
 | `EA_REAPER_INTERVAL_MS` | no | `60000` | no | reaper period |
 | `EA_STYLES_CACHE_MS` | no | `60000` | no | styles response cache |
 | `EA_ALERT_EMAIL` | no | unset | no | alert recipient (Step 8.5, decided in Step 11) |
@@ -3759,7 +3712,7 @@ Likelihood and impact: L (low), M (medium), H (high). Owner: "Build" means me du
 | R19 | Gemini changes model names or behaviour | M | M | Ops | Model names in env, no defaults in code; smoke script after any change | Smoke script failure; refusal rate change |
 | R20 | Editors do not adopt it (slow, off-brand, too many clicks) | M | H | User | Trial with 15 articles before launch; directions first so no style knowledge is needed; weekly report on picks and time | Low requests per day; many batches before a pick |
 | R21 | The ET Prime and Masterclass work (2 to 13 Nov) competes for the same time | H | M | User | Fixed scope for launch (16 styles minimum); remaining styles and report move to 5 to 6 Nov | Timeline slips in Appendix F |
-| R22 | 9:16 extension changes the original image | M | L | Build | Centre-band similarity check; letterbox fallback that always works | `pack_extended` with fallback count rising |
+| R22 | A final comes back off-square or smaller than expected | L | L | Build | Centre-crop to 1:1 in code; never enlarge; the pixel size is shown in the Final panel | finals below 1024 on a side in the weekly report |
 | R23 | Cloudinary storage grows with unpicked previews | M | L | Ops | Previews are 1024 px WebP; 180-day deletion of unpicked previews; weekly orphan sweep | Cloudinary usage report |
 | R24 | Approved likeness photos without proper consent | L | H | User | `consentNote` required; admin-only; audited; retire deletes photos | Audit review |
 
@@ -3774,7 +3727,7 @@ Today is Monday 26 October 2026. Each day ends with a short demo of what now wor
 | 1 | Mon 26 Oct | This plan and STYLE_LIBRARY.md; repo scaffold (Step 2): workspace, env validation, logger, health and ready, error envelope, API-key middleware, CI verify job skeleton | `bun run verify` green; `/health` and `/ready` answer; plan approved |
 | 2 | Tue 27 Oct | Data model and first migration (Step 3); security middleware: actor, rate limit, validation, spend guard (Step 4); provider clients with instrumented calls and pricing; fakes for all providers (Step 6.11) | Migration applies; a fake call writes an Attempt with cost; security unit tests pass |
 | 3 | Wed 28 Oct | Read stage with guards and directions; batch planning; preview stage with reference picking; Socket.IO events; requests, batches and styles routes (Steps 6.3 to 6.5, 7.3, 7.4, 7.6) | With fakes: paste to four previews with events in order; integration tests green |
-| 4 | Thu 29 Oct | Finalize and judge; publish pack (crop, extend, alt text, encode, ZIP); reaper; cancel; style library tooling (seed, exemplar generation, description, embedding, admin routes); start exemplar generation for all 24 styles under the build cap | With fakes: full lifecycle to PACK_READY; crash tests pass; first real exemplar batches generated |
+| 4 | Thu 29 Oct | Finalize and judge; publish pack (square resize, alt text, encode, ZIP); reaper; cancel; style library tooling (seed, exemplar generation, description, embedding, admin routes); start exemplar generation for all 24 styles under the build cap | With fakes: full lifecycle to PACK_READY; crash tests pass; first real exemplar batches generated |
 | 5 | Fri 30 Oct | AI Studio integration (Step 10): API client, proxy routes, socket relay, ET Articles page (paste card, prompt, directions and style gallery, preview grid, stacked batches, finalize, pack download, series match, history), Admin style library and approval screen; internal demo | Demo on a local stack with real providers for one article; AI Studio tests green |
 | 6 to 7 | Sat 31 Oct to Sun 1 Nov | Optional buffer: catch-up and exemplar generation continues | n/a |
 | 8 | Mon 2 Nov | Test hardening (Step 9): security tests, load test, golden set; CI integration and deploy jobs; box setup: database and role, systemd unit, `.env`, registry entry, port check; first deploy; AI Studio deploy with `EDITORIAL_ART_ENABLED=false` then true for admins | Service live on loopback; health green; security checklist (Step 4.13) passes on the box |
@@ -3816,7 +3769,7 @@ Notes:
 | Likeness | Approved photos of a real person, used only to illustrate them respectfully |
 | LIVE | A style status meaning editors can use it (at least 15 approved references) |
 | Option | One image in a batch: preview, then optionally final and pack |
-| Pack (publish pack) | The final image in 4 sizes with alt text, caption and credit |
+| Pack (publish pack) | The final square 1:1 image in WebP and JPG, with alt text, caption and credit |
 | Preview | A quick, lower-resolution image used for choosing |
 | Prompt (editor prompt) | The editor's optional note about what the image should show, kept separate from the article |
 | promptCore | The sentence that defines a style's medium, palette, line and texture, used in every prompt for that style |
