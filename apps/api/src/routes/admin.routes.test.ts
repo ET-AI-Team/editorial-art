@@ -107,10 +107,10 @@ describe('admin access', () => {
     expect(res.body.error?.code).toBe('FORBIDDEN');
   });
 
-  test('the styles list has all 24 with counts', async () => {
+  test('the styles list has all 48 with counts', async () => {
     const res = await call('/admin/styles');
     const styles = res.body.styles as { slug: string; status: string; counts: { approved: number } }[];
-    expect(styles).toHaveLength(24);
+    expect(styles).toHaveLength(48);
     expect(styles[0]).toMatchObject({ status: 'DRAFT', counts: { approved: 0 } });
   });
 });

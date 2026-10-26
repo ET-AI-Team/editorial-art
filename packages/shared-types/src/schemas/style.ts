@@ -1,7 +1,20 @@
 import { z } from 'zod';
 import { Slug } from './common';
 
-export const FAMILY_SLUGS = ['illustration', 'painting', 'drawing-print', 'craft-3d', 'graphic-collage', 'photo-based'] as const;
+export const FAMILY_SLUGS = [
+  'flat-vector',
+  'painting',
+  'drawing-sketch',
+  'print-poster',
+  'collage-mixed',
+  'handmade-craft',
+  'render-3d',
+  'photo-realism',
+  'cartoon-comic',
+  'pop-graphic',
+  'indian-art',
+  'abstract-surreal',
+] as const;
 export const FamilySlug = z.enum(FAMILY_SLUGS);
 export type FamilySlug = z.infer<typeof FamilySlug>;
 
@@ -53,7 +66,7 @@ export type StyleSeed = z.infer<typeof StyleSeed>;
 export const FamilySeed = z.object({ slug: FamilySlug, label: z.string(), sortOrder: z.number().int() }).strict();
 
 export const StyleLibrarySeed = z
-  .object({ families: z.array(FamilySeed).length(6), styles: z.array(StyleSeed).length(24) })
+  .object({ families: z.array(FamilySeed).length(FAMILY_SLUGS.length), styles: z.array(StyleSeed).length(4 * FAMILY_SLUGS.length) })
   .strict()
   .superRefine((v, ctx) => {
     const slugs = new Set(v.styles.map((s) => s.slug));

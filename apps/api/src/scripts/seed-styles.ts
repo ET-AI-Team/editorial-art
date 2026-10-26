@@ -1,5 +1,5 @@
 /**
- * Loads the 6 families and 24 house styles from docs/STYLE_LIBRARY.md into the database.
+ * Loads the 12 families and 48 house styles from docs/STYLE_LIBRARY.md into the database.
  *
  *   bun run seed:styles
  *

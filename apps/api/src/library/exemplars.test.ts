@@ -50,7 +50,7 @@ describe('exemplar prompts', () => {
     expect(prompt).not.toContain('approved examples');
   });
 
-  test('photo-based styles are objects and places only', async () => {
+  test('photoreal styles are objects and places only', async () => {
     const style = (await styleById(await styleId('still-life')))!;
     const prompt = exemplarPrompt(style, NEUTRAL_SUBJECTS[1], true);
     expect(prompt).toContain('objects and places only. No people.');

@@ -7,6 +7,7 @@ import {
   artworkPasses,
   CreateBatchBody,
   CreateRequestBody,
+  FAMILY_SLUGS,
   JudgeOutput,
   ReadOutput,
   higherSensitivity,
@@ -19,16 +20,49 @@ const LIBRARY = readFileSync(join(import.meta.dir, '../../../docs/STYLE_LIBRARY.
 describe('style library seed', () => {
   const seed = parseStyleLibrary(LIBRARY);
 
-  test('has 24 styles, 4 in each of the 6 families', () => {
-    expect(seed.styles).toHaveLength(24);
-    expect(seed.families).toHaveLength(6);
+  test('has 48 styles, 4 in each of the 12 families, in family order', () => {
+    expect(seed.styles).toHaveLength(48);
+    expect(seed.families.map((f) => f.slug)).toEqual([...FAMILY_SLUGS]);
+    const familyOrder = seed.styles.map((s) => FAMILY_SLUGS.indexOf(s.familySlug));
+    expect(familyOrder).toEqual([...familyOrder].sort((a, b) => a - b));
+    expect(seed.styles.map((s) => s.sortOrder)).toEqual(seed.styles.map((_, i) => i + 1));
   });
 
-  test('photo-based styles never allow real people', () => {
-    for (const style of seed.styles.filter((s) => s.familySlug === 'photo-based')) {
-      expect(style.safety.photoreal).toBe(true);
-      expect(style.safety.allowsRealPeople).toBe(false);
+  test('photoreal styles never allow real people, and the photo family is all photoreal', () => {
+    for (const style of seed.styles.filter((s) => s.safety.photoreal)) expect(style.safety.allowsRealPeople).toBe(false);
+    for (const style of seed.styles.filter((s) => s.familySlug === 'photo-realism')) expect(style.safety.photoreal).toBe(true);
+  });
+
+  test('every style has the three base donts', () => {
+    for (const style of seed.styles) {
+      expect(style.ruleSheet.dont.slice(0, 3)).toEqual([
+        'no text, letters, numbers or symbols that read as writing anywhere in the image',
+        'no logos, brand marks, watermarks or signatures',
+        "no imitation of any named artist's signature style",
+      ]);
     }
+  });
+
+  test('the readable sections match the seed', () => {
+    const families = new Map(seed.families.map((f) => [f.slug, f.label]));
+    const sections = LIBRARY.slice(0, LIBRARY.indexOf('## Machine-readable seed')).split(/\n## \d+\. /).slice(1);
+    expect(sections).toHaveLength(seed.styles.length);
+    seed.styles.forEach((style, i) => {
+      const section = sections[i]!;
+      expect(section.startsWith(`${style.label}\n`)).toBe(true);
+      expect(section).toContain(`- **Slug:** \`${style.slug}\``);
+      expect(section).toContain(`- **Family:** ${families.get(style.familySlug)}`);
+      expect(section).toContain(`- **Summary:** ${style.summary}`);
+      expect(section).toContain(`> ${style.ruleSheet.promptCore}`);
+      expect(section).toContain(`**Negative:** ${style.ruleSheet.negative}`);
+      const s = style.safety;
+      expect(section).toContain(`**Safety:** allowsPeople: **${s.allowsPeople}**, allowsRealPeople: **${s.allowsRealPeople}**, allowsSensitive: **${s.allowsSensitive}**, photoreal: **${s.photoreal}**`);
+      for (const line of [...style.ruleSheet.do, ...style.ruleSheet.dont]) expect(section).toContain(`- ${line}\n`);
+    });
+  });
+
+  test('the file has no em or en dashes', () => {
+    expect(LIBRARY).not.toMatch(/[\u2013\u2014]/);
   });
 
   test('no rule sheet asks for an imitation of a person', () => {

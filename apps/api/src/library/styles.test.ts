@@ -8,11 +8,15 @@ beforeAll(resetDb);
 afterAll(() => db.$disconnect());
 
 describe('style library', () => {
-  test('seeding loads 6 families and 24 styles and is safe to repeat', async () => {
-    expect(await seedStyles()).toEqual({ families: 6, styles: 24 });
+  test('seeding loads 12 families and 48 styles and is safe to repeat', async () => {
+    await db.styleFamily.create({ data: { slug: 'illustration', label: 'Illustration', sortOrder: 99 } });
+    expect(await seedStyles()).toEqual({ families: 12, styles: 48 });
     await db.style.update({ where: { slug: 'ink-wash' }, data: { status: 'LIVE' } });
     await seedStyles();
-    expect(await db.style.count()).toBe(24);
+    expect(await db.style.count()).toBe(48);
+    // A family that left the library, with no styles, is gone.
+    expect(await db.styleFamily.count()).toBe(12);
+    expect((await db.style.findUniqueOrThrow({ where: { slug: 'ink-wash' }, include: { family: true } })).family.slug).toBe('drawing-sketch');
     // Re-seeding never changes a style's status.
     expect((await liveStyles()).map((s) => s.slug)).toEqual(['ink-wash']);
   });
@@ -21,6 +25,7 @@ describe('style library', () => {
     const styles = new Map((await db.style.findMany()).map((s) => [s.slug, { slug: s.slug, safety: s.safety as never }]));
     expect(styleAllowed(styles.get('clay-puppet')!, 'NONE')).toBe(true);
     expect(styleAllowed(styles.get('clay-puppet')!, 'ELEVATED')).toBe(false);
+    expect(styleAllowed(styles.get('editorial-cartoon')!, 'ELEVATED')).toBe(false);
     expect(styleAllowed(styles.get('charcoal')!, 'HIGH')).toBe(true);
     expect(styleAllowed(styles.get('oil-impasto')!, 'HIGH')).toBe(false);
     expect(styleAllowed(styles.get('charcoal')!, 'BLOCKED')).toBe(false);

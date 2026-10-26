@@ -90,8 +90,9 @@ export function styleLibraryPath(): string {
 }
 
 /**
- * Upserts the 6 families and 24 styles from STYLE_LIBRARY.md, by slug. Safe to run again: it
- * updates definitions but never changes a style's status, covers or references.
+ * Upserts the 12 families and 48 styles from STYLE_LIBRARY.md, by slug. Safe to run again: it
+ * updates definitions but never changes a style's status, covers or references. A family no
+ * longer in the file and left without styles is removed.
  */
 export async function seedStyles(markdown = readFileSync(styleLibraryPath(), 'utf8')): Promise<{ families: number; styles: number }> {
   const seed = parseStyleLibrary(markdown);
@@ -112,5 +113,6 @@ export async function seedStyles(markdown = readFileSync(styleLibraryPath(), 'ut
     };
     await db.style.upsert({ where: { slug: s.slug }, create: { slug: s.slug, ...data }, update: data });
   }
+  await db.styleFamily.deleteMany({ where: { slug: { notIn: seed.families.map((f) => f.slug) }, styles: { none: {} } } });
   return { families: seed.families.length, styles: seed.styles.length };
 }
