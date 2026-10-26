@@ -57,6 +57,14 @@ beforeAll(async () => {
     ids.push(r.id);
   }
   await db.style.update({ where: { id: style.id }, data: { coverReferenceIds: [ids[0]!] } });
+  // charcoal and linocut are LIVE on generated references too; charcoal gets too few artist images,
+  // linocut is not in the manifest at all.
+  for (const slug of ['charcoal', 'linocut']) {
+    const other = await db.style.update({ where: { slug }, data: { status: 'LIVE' } });
+    await db.styleReference.create({
+      data: { styleId: other.id, source: 'GENERATED', sourceNote: 'test', url: `https://res.cloudinary.com/fake/image/upload/v1/gen/${slug}.webp`, publicId: `gen/${slug}`, width: 1024, height: 1024, description: 'x', subjects: [], mood: 'calm', status: 'APPROVED' },
+    });
+  }
 });
 
 afterAll(async () => {
@@ -88,10 +96,15 @@ describe('importing the artist library', () => {
     const coverArtists = refs.filter((r) => ink.coverReferenceIds.includes(r.id)).map((r) => r.artistId);
     expect(new Set(coverArtists).size).toBe(3);
 
-    expect(await db.styleReference.count({ where: { source: 'GENERATED', status: { not: 'RETIRED' } } })).toBe(0);
+    expect(await db.styleReference.count({ where: { styleId: ink.id, source: 'GENERATED', status: { not: 'RETIRED' } } })).toBe(0);
     expect(result.retired).toBe(4);
-    expect(result.below.map((b) => b.slug)).toContain('charcoal');
-    expect((await db.style.findUniqueOrThrow({ where: { slug: 'charcoal' } })).status).not.toBe('LIVE');
+    expect(result.live).toEqual(['ink-wash']);
+    // Below the minimum: imported, but left LIVE on its generated references.
+    expect(result.below).toEqual([{ slug: 'charcoal', approved: 6, min: 15 }]);
+    expect((await db.style.findUniqueOrThrow({ where: { slug: 'charcoal' } })).status).toBe('LIVE');
+    // Not in the manifest: untouched.
+    expect((await db.style.findUniqueOrThrow({ where: { slug: 'linocut' } })).status).toBe('LIVE');
+    expect(await db.styleReference.count({ where: { source: 'GENERATED', status: 'APPROVED' } })).toBe(2);
     expect(await db.artist.count()).toBe(5);
   });
 
@@ -106,14 +119,14 @@ describe('deleting retired generated references', () => {
   test('a dry run only counts', async () => {
     const r = await deleteGenerated({ apply: false });
     expect(r).toMatchObject({ dryRun: true, found: 4, deleted: 0 });
+    expect(await db.styleReference.count({ where: { source: 'GENERATED' } })).toBe(6);
     expect(destroyed).toHaveLength(0);
-    expect(await db.styleReference.count({ where: { source: 'GENERATED' } })).toBe(4);
   });
 
   test('--apply deletes the rows and their images, and nothing else', async () => {
     const r = await deleteGenerated({ apply: true });
     expect(r).toMatchObject({ dryRun: false, found: 4, deleted: 4, destroyed: 4, failed: 0 });
-    expect(await db.styleReference.count({ where: { source: 'GENERATED' } })).toBe(0);
+    expect(await db.styleReference.count({ where: { source: 'GENERATED' } })).toBe(2);
     expect(await db.styleReference.count({ where: { source: 'ARTIST' } })).toBe(24);
     expect(destroyed.sort()).toEqual(['gen/0', 'gen/1', 'gen/2', 'gen/3']);
   });

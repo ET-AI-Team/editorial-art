@@ -245,8 +245,10 @@ folder outside the repo.
    ```
 4. **Import** on the box: copy `<out>/library-manifest.json` to the box (it holds URLs, text and
    embeddings, no image files), seed the 48 styles, then import. Every artwork becomes an APPROVED
-   reference, covers are set to three artists' best, every GENERATED reference is retired, and a
-   style is LIVE exactly when it has 15 approved references. The output lists styles below 15.
+   reference and covers are set to three artists' best. A style with at least 15 artist
+   references then has its GENERATED references retired and goes LIVE; a style below 15 is listed
+   and left as it was. Only styles in the manifest are touched, so the library can go live one
+   family at a time: import each family's manifest as it is ready.
    ```bash
    bun run seed:styles
    bun run library:import -- --dir <folder holding library-manifest.json>

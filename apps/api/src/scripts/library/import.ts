@@ -7,9 +7,10 @@
  * Reads <dir>/library-manifest.json (after library:upload). For each style, in one transaction:
  * upserts the artists by slug, inserts each artwork as an APPROVED reference with source ARTIST
  * (skipping public ids already present, so a re-run is safe), stores its embedding, and sets the
- * covers to the three best artworks by three different artists. Then every GENERATED reference
- * is retired and dropped from covers, and each style is LIVE exactly when it has at least its
- * minimum of approved references (15); styles below it are listed and not offered to editors.
+ * covers to the three best artworks by three different artists. Then each imported style with at
+ * least its minimum of approved artist references (15) has its GENERATED references retired and
+ * dropped from covers and goes LIVE. A style below the minimum is listed and left as it was.
+ * Only styles in the manifest are touched, so the library can go live one family at a time.
  */
 import { join } from 'node:path';
 import { db } from '../../lib/db';
@@ -108,39 +109,56 @@ async function importStyle(slug: string, entries: LibraryEntry[]): Promise<Style
   );
 }
 
-/** Retires every GENERATED reference (of the given styles, or all) and takes it out of covers. */
-export async function retireGenerated(styleIds?: string[]): Promise<number> {
-  const scope = styleIds ? { styleId: { in: styleIds } } : {};
+/** Retires every GENERATED reference of the given styles and takes it out of their covers. */
+export async function retireGenerated(styleIds: string[]): Promise<number> {
+  if (!styleIds.length) return 0;
+  const scope = { styleId: { in: styleIds } };
   const retired = await db.styleReference.updateMany({ where: { ...scope, source: 'GENERATED', status: { not: 'RETIRED' } }, data: { status: 'RETIRED', reviewNote: 'Replaced by the artist library.' } });
   const generated = new Set((await db.styleReference.findMany({ where: { ...scope, source: 'GENERATED' }, select: { id: true } })).map((r) => r.id));
-  for (const style of await db.style.findMany({ where: styleIds ? { id: { in: styleIds } } : {}, select: { id: true, coverReferenceIds: true } })) {
+  for (const style of await db.style.findMany({ where: { id: { in: styleIds } }, select: { id: true, coverReferenceIds: true } })) {
     const kept = style.coverReferenceIds.filter((id) => !generated.has(id));
     if (kept.length !== style.coverReferenceIds.length) await db.style.update({ where: { id: style.id }, data: { coverReferenceIds: kept } });
   }
   return retired.count;
 }
 
-/** LIVE exactly when a style has its minimum of approved references; otherwise not offered. */
-export async function settleStatuses(styleIds?: string[]): Promise<{ live: string[]; below: { slug: string; approved: number; min: number }[] }> {
-  const counts = new Map(
-    (await db.styleReference.groupBy({ by: ['styleId'], where: { status: 'APPROVED' }, _count: { _all: true } })).map((g) => [g.styleId, g._count._all])
-  );
-  const live: string[] = [];
-  const below: { slug: string; approved: number; min: number }[] = [];
-  for (const style of await db.style.findMany({ where: { status: { not: 'RETIRED' }, ...(styleIds ? { id: { in: styleIds } } : {}) }, orderBy: { sortOrder: 'asc' } })) {
-    const approved = counts.get(style.id) ?? 0;
-    if (approved >= style.minApprovedRefs) {
-      live.push(style.slug);
-      if (style.status !== 'LIVE') await db.style.update({ where: { id: style.id }, data: { status: 'LIVE' } });
-    } else {
-      below.push({ slug: style.slug, approved, min: style.minApprovedRefs });
-      if (style.status === 'LIVE') await db.style.update({ where: { id: style.id }, data: { status: 'CURATING' } });
-    }
-  }
-  return { live, below };
+export interface Settled {
+  live: string[];
+  below: { slug: string; approved: number; min: number }[];
+  retired: number;
 }
 
-export async function importLibrary(manifest: LibraryEntry[], opts: { style?: string } = {}): Promise<{ styles: StyleImportResult[]; retired: number; live: string[]; below: { slug: string; approved: number; min: number }[] }> {
+/**
+ * For each given style: with at least its minimum of approved artist references, its generated
+ * references are retired and it goes LIVE. Below the minimum nothing about it changes (it keeps
+ * its status and any generated references), so importing part of the library never takes a
+ * style away from editors.
+ */
+export async function settleStyles(styleIds: string[]): Promise<Settled> {
+  const counts = new Map(
+    (await db.styleReference.groupBy({ by: ['styleId'], where: { styleId: { in: styleIds }, status: 'APPROVED', source: { not: 'GENERATED' } }, _count: { _all: true } })).map((g) => [
+      g.styleId,
+      g._count._all,
+    ])
+  );
+  const out: Settled = { live: [], below: [], retired: 0 };
+  const ready: string[] = [];
+  for (const style of await db.style.findMany({ where: { id: { in: styleIds }, status: { not: 'RETIRED' } }, orderBy: { sortOrder: 'asc' } })) {
+    const approved = counts.get(style.id) ?? 0;
+    if (approved >= style.minApprovedRefs) {
+      ready.push(style.id);
+      out.live.push(style.slug);
+    } else {
+      out.below.push({ slug: style.slug, approved, min: style.minApprovedRefs });
+    }
+  }
+  out.retired = await retireGenerated(ready);
+  if (ready.length) await db.style.updateMany({ where: { id: { in: ready } }, data: { status: 'LIVE' } });
+  return out;
+}
+
+/** Imports the styles in the manifest (or one of them) and touches no other style. */
+export async function importLibrary(manifest: LibraryEntry[], opts: { style?: string } = {}): Promise<{ styles: StyleImportResult[] } & Settled> {
   const ready = manifest.filter((e) => e.cloudinaryUrl && e.publicId && (!opts.style || e.style === opts.style));
   const missing = manifest.filter((e) => !e.cloudinaryUrl || !e.publicId).length;
   if (missing) console.warn(`${missing} manifest entries have no Cloudinary URL yet and are skipped. Run library:upload first.`);
@@ -153,12 +171,10 @@ export async function importLibrary(manifest: LibraryEntry[], opts: { style?: st
     if (result) console.log(`  ${slug}: ${result.inserted} new, ${result.approved} approved from ${result.artists} artists`);
     if (result) results.push(result);
   }
-  // A run limited to one style only touches that style; a full run settles the whole library.
-  const scope = opts.style ? (await db.style.findMany({ where: { slug: opts.style }, select: { id: true } })).map((s) => s.id) : undefined;
-  const retired = await retireGenerated(scope);
-  const { live, below } = await settleStatuses(scope);
-  for (const r of results) r.status = live.includes(r.style) ? 'LIVE' : 'below minimum';
-  return { styles: results, retired, live, below };
+  const ids = (await db.style.findMany({ where: { slug: { in: results.map((r) => r.style) } }, select: { id: true } })).map((s) => s.id);
+  const settled = await settleStyles(ids);
+  for (const r of results) r.status = settled.live.includes(r.style) ? 'LIVE' : 'below minimum, unchanged';
+  return { styles: results, ...settled };
 }
 
 async function main(): Promise<void> {
@@ -173,9 +189,9 @@ async function main(): Promise<void> {
   for (const r of result.styles) {
     console.log(`${r.style.padEnd(26)} ${String(r.inserted).padStart(8)} ${String(r.skipped).padStart(8)} ${String(r.approved).padStart(9)} ${String(r.artists).padStart(8)}  ${r.status}`);
   }
-  console.log(`\nRetired ${result.retired} generated references. ${result.live.length} styles are LIVE.`);
+  console.log(`\nRetired ${result.retired} generated references. ${result.live.length} imported styles are LIVE.`);
   if (result.below.length) {
-    console.log(`Below the minimum, not offered to editors (${result.below.length}):`);
+    console.log(`Below the minimum, left unchanged (${result.below.length}):`);
     for (const b of result.below) console.log(`  ${b.slug.padEnd(26)} ${b.approved} of ${b.min}`);
   }
 }
