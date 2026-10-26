@@ -186,6 +186,13 @@ jobs:
         working-directory: ${{ env.DEPLOY_DIR }}
 
     steps:
+      # The box does not put bun on PATH (it lives in abhigyan.raj's home on /data). Use that exact
+      # binary, the same one the systemd unit runs, so install and runtime cannot disagree.
+      - name: Put the box's bun on PATH
+        run: |
+          echo "/data/abhigyan.raj/.bun/bin" >> "$GITHUB_PATH"
+          /data/abhigyan.raj/.bun/bin/bun --version
+
       - name: Record current commit for rollback
         id: prev
         run: |
