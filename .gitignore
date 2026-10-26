@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+logs/*
+!logs/.gitkeep
+.DS_Store
+
+# Research images for writing style rule sheets: private, never committed (STYLE_LIBRARY.md).
+research/
+# Real articles used by the golden-set script may be licensed content.
+samples/golden/
+# Local output of scripts (contact sheets, smoke runs).
+out/
