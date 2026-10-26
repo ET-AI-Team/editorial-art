@@ -186,6 +186,38 @@ export const ExemplarScreen = z
   .strict();
 export type ExemplarScreen = z.infer<typeof ExemplarScreen>;
 
+/**
+ * The screen for a real artist's artwork offered to the reference library: how well it matches
+ * the style, and anything that keeps it out (writing, marks, a real person, explicit content, or
+ * the look of an AI image).
+ */
+export const ArtworkScreen = z
+  .object({
+    onStyle: z.number().min(0).max(10),
+    hasReadableText: z.boolean(),
+    hasLogoOrWatermark: z.boolean(),
+    hasSignature: z.boolean(),
+    isPhotoOfRealPerson: z.boolean(),
+    explicitOrGory: z.boolean(),
+    isAiGeneratedLooking: z.boolean(),
+    reason: z.string().max(300),
+  })
+  .strict();
+export type ArtworkScreen = z.infer<typeof ArtworkScreen>;
+
+/** On style (7 or more out of 10) and none of the flags. A signature is never cropped out, so it fails too. */
+export function artworkPasses(s: ArtworkScreen): boolean {
+  return (
+    s.onStyle >= 7 &&
+    !s.hasReadableText &&
+    !s.hasLogoOrWatermark &&
+    !s.hasSignature &&
+    !s.isPhotoOfRealPerson &&
+    !s.explicitOrGory &&
+    !s.isAiGeneratedLooking
+  );
+}
+
 /** The cheap check every preview gets: is there any writing on it? */
 export const PreviewTextCheck = z.object({ hasText: z.boolean(), where: z.string().max(120) }).strict();
 export type PreviewTextCheck = z.infer<typeof PreviewTextCheck>;

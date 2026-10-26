@@ -14,6 +14,7 @@
     "smoke:live": "bun run src/scripts/smoke-live.ts",
     "library:generate": "bun run src/scripts/generate-exemplars.ts",
     "library:collect": "bun run src/scripts/library/collect.ts",
+    "library:screen": "bun run src/scripts/library/screen.ts",
     "report:weekly": "bun run src/scripts/report-weekly.ts",
     "purge:expired": "bun run src/scripts/purge-expired.ts",
     "check:health": "bun run src/scripts/check-health.ts",

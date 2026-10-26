@@ -17,7 +17,7 @@ function dataUrl(buffer: Buffer, mimeType: string): string {
 export async function chatJson(p: ChatJsonParams): Promise<ChatJsonResult> {
   const content: unknown[] = [{ type: 'text', text: p.user }];
   for (const image of p.images ?? []) {
-    content.push({ type: 'image_url', image_url: { url: dataUrl(image.buffer, image.mimeType), detail: 'low' } });
+    content.push({ type: 'image_url', image_url: { url: dataUrl(image.buffer, image.mimeType), detail: p.imageDetail ?? 'low' } });
   }
   let data: {
     model?: string;

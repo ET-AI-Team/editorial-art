@@ -232,20 +232,30 @@ function failureReason(v: ExemplarScreen): string {
   return 'Off-style.';
 }
 
-/** A.6.1 plus the embedding the reference picker searches. */
-async function describeAndEmbed(referenceId: string, image: ImageData): Promise<void> {
-  const described = await chat(
-    { stage: 'describe' },
+/** A.6.1: what an image shows, for the search index. Pure: nothing is written. */
+export async function describeImage(image: ImageData, ctx: CallContext = { stage: 'describe' }): Promise<ReferenceDescription> {
+  return chat(
+    ctx,
     { kind: 'describe_reference', model: env().EA_JUDGE_MODEL, system: DESCRIBE_SYSTEM, user: DESCRIBE_USER, images: [image], temperature: 0.2 },
     ReferenceDescription,
     ESTIMATE_INR.text
   );
+}
+
+/** The embedding the reference picker searches. Pure: nothing is written. */
+export async function embedDescription(text: string, ctx: CallContext = { stage: 'embed' }): Promise<{ vector: number[]; model: string }> {
+  return { vector: await embedText(ctx, text), model: env().EA_EMBED_MODEL };
+}
+
+/** Describes and embeds an image and stores both on the reference. */
+async function describeAndEmbed(referenceId: string, image: ImageData): Promise<void> {
+  const described = await describeImage(image);
   await db.styleReference.update({
     where: { id: referenceId },
     data: { description: described.description, subjects: described.subjects, mood: described.mood },
   });
-  const vector = await embedText({ stage: 'embed' }, described.description);
-  await storeEmbedding(referenceId, vector, env().EA_EMBED_MODEL);
+  const embedded = await embedDescription(described.description);
+  await storeEmbedding(referenceId, embedded.vector, embedded.model);
 }
 
 /** For uploaded ET archive or licensed references: describe and embed what was uploaded. */

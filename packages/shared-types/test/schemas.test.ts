@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   AltTextOutput,
+  ArtworkScreen,
+  artworkPasses,
   CreateBatchBody,
   CreateRequestBody,
   JudgeOutput,
@@ -104,6 +106,24 @@ describe('model outputs', () => {
     expect(judgePasses({ ...pass, onStyle: 2 })).toBe(false);
     expect(judgePasses({ ...pass, hasText: true })).toBe(false);
     expect(judgePasses({ ...pass, photorealNewsRisk: true })).toBe(false);
+  });
+
+  test('an artwork passes the library screen only on style and with no flag set', () => {
+    const pass = ArtworkScreen.parse({
+      onStyle: 7,
+      hasReadableText: false,
+      hasLogoOrWatermark: false,
+      hasSignature: false,
+      isPhotoOfRealPerson: false,
+      explicitOrGory: false,
+      isAiGeneratedLooking: false,
+      reason: 'Clear linocut gouge marks.',
+    });
+    expect(artworkPasses(pass)).toBe(true);
+    expect(artworkPasses({ ...pass, onStyle: 6.5 })).toBe(false);
+    expect(artworkPasses({ ...pass, hasSignature: true })).toBe(false);
+    expect(artworkPasses({ ...pass, isAiGeneratedLooking: true })).toBe(false);
+    expect(ArtworkScreen.safeParse({ ...pass, onStyle: 11 }).success).toBe(false);
   });
 
   test('alt text never calls the image a photo', () => {

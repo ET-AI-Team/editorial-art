@@ -171,6 +171,17 @@ function fakeAnswer(p: ChatJsonParams): unknown {
       };
     case 'preview_text':
       return { hasText: false, where: '' };
+    case 'screen_artwork':
+      return {
+        onStyle: p.user.includes('FAKE_OFF_STYLE') ? 3 : 8,
+        hasReadableText: false,
+        hasLogoOrWatermark: false,
+        hasSignature: false,
+        isPhotoOfRealPerson: false,
+        explicitOrGory: false,
+        isAiGeneratedLooking: false,
+        reason: 'Matches the medium and palette.',
+      };
     case 'screen_exemplar':
       return { hasText: false, hasWatermarkOrSignature: false, anatomyOk: true, onStyle: 4, reason: '' };
     default:
