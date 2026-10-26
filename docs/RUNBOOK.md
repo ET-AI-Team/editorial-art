@@ -86,8 +86,8 @@ mkdir -p logs
 ### 1.5 Units and timers
 
 ```bash
-sudo cp ops/editorial-art.service ops/editorial-art-*.service ops/editorial-art-*.timer /etc/systemd/system/
-sudo cp ops/editorial-art*.service ops/editorial-art-*.timer /data/products/_infra/systemd/
+sudo cp ops/editorial-art*.service ops/editorial-art-*.timer /etc/systemd/system/
+cp ops/editorial-art*.service ops/editorial-art-*.timer /data/products/_infra/systemd/
 sudo systemctl daemon-reload
 sudo systemctl enable --now editorial-art
 sudo systemctl enable --now editorial-art-purge.timer editorial-art-health.timer editorial-art-sweep.timer

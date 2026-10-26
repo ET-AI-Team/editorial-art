@@ -15,7 +15,8 @@
     "library:generate": "bun run src/scripts/generate-exemplars.ts",
     "report:weekly": "bun run src/scripts/report-weekly.ts",
     "purge:expired": "bun run src/scripts/purge-expired.ts",
-    "check:health": "bun run src/scripts/check-health.ts"
+    "check:health": "bun run src/scripts/check-health.ts",
+    "sweep:cloudinary": "bun run src/scripts/sweep-cloudinary.ts"
   },
   "dependencies": {
     "@editorial-art/shared-types": "workspace:*",
