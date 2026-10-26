@@ -10,7 +10,9 @@ import {
   type AdminReference as AdminReferenceT,
   type AdminStyleRow as AdminStyleRowT,
 } from '@editorial-art/shared-types';
-import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import { asyncRoute } from '../lib/async-route';
+import { invalidateStylesCache } from './styles.routes';
+import { Router, type Request, type RequestHandler } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
@@ -34,13 +36,13 @@ import { enqueue } from '../queues/queues';
  */
 export const adminRouter = Router();
 adminRouter.use('/admin', requireAdmin);
+// Any admin write can change what the style gallery shows (status, covers, labels).
+adminRouter.use('/admin', (req, _res, next) => {
+  if (req.method !== 'GET') invalidateStylesCache();
+  next();
+});
 
 /** Express 4 does not catch async errors; this passes them to the error handler. */
-function wrap(handler: (req: Request, res: Response) => Promise<void>): RequestHandler {
-  return (req, res, next: NextFunction) => {
-    handler(req, res).catch(next);
-  };
-}
 
 const UuidParam = z.string().uuid();
 
@@ -98,7 +100,7 @@ async function styleRow(id: string): Promise<AdminStyleRowT> {
 
 adminRouter.get(
   '/admin/styles',
-  wrap(async (_req, res) => {
+  asyncRoute(async (_req, res) => {
     res.json({ styles: await styleRows() });
   })
 );
@@ -106,7 +108,7 @@ adminRouter.get(
 adminRouter.patch(
   '/admin/styles/:id',
   validateBody(PatchStyleBody),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const id = idParam(req);
     const body = req.body as z.infer<typeof PatchStyleBody>;
     if (!(await db.style.findUnique({ where: { id }, select: { id: true } }))) throw ApiError.notFound('No such style.');
@@ -135,7 +137,7 @@ adminRouter.post(
   '/admin/styles/:id/generate',
   rateLimit('library'),
   validateBody(GenerateExemplarsBody),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const id = idParam(req);
     const body = req.body as z.infer<typeof GenerateExemplarsBody>;
     const style = await styleById(id);
@@ -165,7 +167,7 @@ adminRouter.post(
 
 adminRouter.post(
   '/admin/styles/:id/publish',
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const id = idParam(req);
     const style = await db.style.findUnique({ where: { id } });
     if (!style) throw ApiError.notFound('No such style.');
@@ -195,7 +197,7 @@ adminRouter.post(
 
 adminRouter.post(
   '/admin/styles/:id/retire',
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const id = idParam(req);
     if (!(await db.style.findUnique({ where: { id }, select: { id: true } }))) throw ApiError.notFound('No such style.');
     // Existing requests keep their images; the style just stops being offered.
@@ -245,7 +247,7 @@ const ReferenceQuery = z
 
 adminRouter.get(
   '/admin/references',
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const q = parseQuery(ReferenceQuery, req.query);
     const rows = await db.styleReference.findMany({
       where: { ...(q.styleId ? { styleId: q.styleId } : {}), ...(q.status ? { status: q.status } : {}) },
@@ -269,7 +271,7 @@ async function dropFromCovers(referenceIds: string[]): Promise<void> {
 adminRouter.post(
   '/admin/references/bulk-review',
   validateBody(BulkReviewBody),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const body = req.body as z.infer<typeof BulkReviewBody>;
     const actor = actorOf(req);
     const ids = [...new Set(body.ids)];
@@ -293,7 +295,7 @@ adminRouter.post(
 adminRouter.post(
   '/admin/references/:id/review',
   validateBody(ReviewReferenceBody),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const id = idParam(req);
     const body = req.body as z.infer<typeof ReviewReferenceBody>;
     const actor = actorOf(req);
@@ -359,7 +361,7 @@ const UploadFields = z
 adminRouter.post(
   '/admin/references/upload',
   multipart(referenceUpload),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const fields = UploadFields.safeParse(req.body);
     if (!fields.success) throw ApiError.validation(fields.error.flatten());
     if (!req.file) throw new ApiError('UPLOAD_INVALID', 400, 'Attach an image in the "image" field.');
@@ -441,7 +443,7 @@ function parseAliases(raw: unknown): string[] {
 
 adminRouter.get(
   '/admin/likenesses',
-  wrap(async (_req, res) => {
+  asyncRoute(async (_req, res) => {
     const rows = await db.likeness.findMany({ orderBy: [{ status: 'asc' }, { name: 'asc' }] });
     res.json({ items: rows.map(toLikenessDto) });
   })
@@ -450,7 +452,7 @@ adminRouter.get(
 adminRouter.post(
   '/admin/likenesses',
   multipart(likenessUpload),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const raw = req.body as Record<string, unknown>;
     const body = LikenessBody.safeParse({ name: raw.name, aliases: parseAliases(raw.aliases), consentNote: raw.consentNote });
     if (!body.success) throw ApiError.validation(body.error.flatten());
@@ -498,7 +500,7 @@ const PatchLikenessBody = z
 adminRouter.patch(
   '/admin/likenesses/:id',
   validateBody(PatchLikenessBody),
-  wrap(async (req, res) => {
+  asyncRoute(async (req, res) => {
     const id = idParam(req);
     const body = req.body as z.infer<typeof PatchLikenessBody>;
     const existing = await db.likeness.findUnique({ where: { id } });
@@ -529,7 +531,7 @@ adminRouter.patch(
 
 adminRouter.get(
   '/admin/spend',
-  wrap(async (_req, res) => {
+  asyncRoute(async (_req, res) => {
     res.json(await spendSummary());
   })
 );
