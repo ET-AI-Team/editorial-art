@@ -253,7 +253,7 @@ export type AdminStyleRow = z.infer<typeof AdminStyleRow>;
 export const AdminReference = z.object({
   id: Id,
   styleId: Id,
-  source: z.enum(['GENERATED', 'ET_ARCHIVE', 'LICENSED']),
+  source: z.enum(['GENERATED', 'ET_ARCHIVE', 'LICENSED', 'ARTIST']),
   url: z.string().url(),
   width: z.number().int(),
   height: z.number().int(),

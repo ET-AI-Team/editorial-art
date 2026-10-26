@@ -83,6 +83,7 @@ enum RefSource {
   GENERATED
   ET_ARCHIVE
   LICENSED
+  ARTIST
 }
 
 enum RefStatus {
@@ -106,15 +107,15 @@ enum AttemptResult {
 
 /// One pasted article and everything made from it.
 model Request {
-  id                String         @id @default(uuid())
+  id                String        @id @default(uuid())
   /// `ear_` plus 22 base62 characters; the id AI Studio and the logs use.
-  publicId          String         @unique
+  publicId          String        @unique
   /// Fingerprint of the internal API key that created it, never the key.
   callerKeyId       String
   actorUserId       String
   actorWorkspaceId  String
   clientRef         String?
-  status            RequestStatus  @default(RECEIVED)
+  status            RequestStatus @default(RECEIVED)
   failureCode       String?
   failureReason     String?
   articleTitle      String?
@@ -122,18 +123,20 @@ model Request {
   articleText       String?
   articleHash       String
   articleChars      Int
-  articleLang       String         @default("en")
+  articleLang       String        @default("en")
   articleExcerpt    String
   /// Null after retention.
   prompt            String?
   styleId           String?
+  /// An approved reference of `styleId` the editor chose; every option of the first batch uses it.
+  pinnedReferenceId String?
   seriesOfRequestId String?
   sensitivity       Sensitivity?
-  costInr           Decimal        @default(0) @db.Decimal(12, 4)
-  spendCapInr       Decimal        @db.Decimal(12, 4)
-  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
-  expiresAt         DateTime       @db.Timestamptz(3)
+  costInr           Decimal       @default(0) @db.Decimal(12, 4)
+  spendCapInr       Decimal       @db.Decimal(12, 4)
+  createdAt         DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @db.Timestamptz(3)
+  expiresAt         DateTime      @db.Timestamptz(3)
 
   briefs  Brief[]
   batches Batch[]
@@ -270,7 +273,7 @@ model StyleFamily {
   styles    Style[]
 }
 
-/// One of the 24 ET house styles (docs/STYLE_LIBRARY.md).
+/// One of the 48 ET house styles (docs/STYLE_LIBRARY.md).
 model Style {
   id                String      @id @default(uuid())
   familyId          String
@@ -312,6 +315,11 @@ model StyleReference {
   mood           String
   embedding      Unsupported("vector(1536)")?
   embeddingModel String?
+  /// The artist of an ARTIST reference; null for generated, archive and licensed images.
+  artistId       String?
+  artist         Artist?                      @relation(fields: [artistId], references: [id])
+  /// The public page the artwork was found on.
+  sourceUrl      String?
   /// { passed, reason } from the automatic screen.
   screen         Json?
   status         RefStatus                    @default(CANDIDATE)
@@ -323,6 +331,18 @@ model StyleReference {
   createdAt      DateTime                     @default(now()) @db.Timestamptz(3)
 
   @@index([styleId, status])
+  @@index([styleId, artistId, status])
+}
+
+/// A working artist whose published portfolio images teach a style. Never named in prompts.
+model Artist {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  portfolioUrl String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  references StyleReference[]
 }
 
 /// Approved photos of a real person, for illustrated depiction only.
