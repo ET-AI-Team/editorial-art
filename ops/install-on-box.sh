@@ -8,6 +8,8 @@
 #   2. installs the sudoers drop-in that lets the CI runner restart this one service (checked with
 #      visudo first)
 #   3. enables and starts editorial-art and its three timers, then checks it answers on loopback
+#   4. installs the already-configured GitHub Actions runner (/data/abhigyan.raj/actions-runner-
+#      editorial-art) as a service, the same way the AI Studio and design-pipeline runners run
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 
@@ -30,3 +32,8 @@ for i in $(seq 1 30); do
   sleep 2
 done
 systemctl --no-pager --lines=0 status editorial-art.service | head -3
+
+RUNNER=/data/abhigyan.raj/actions-runner-editorial-art
+if [ -f "$RUNNER/.runner" ] && ! systemctl list-units --type=service --all | grep -q 'actions.runner.ET-AI-Team-editorial-art'; then
+  (cd "$RUNNER" && ./svc.sh install abhigyan.raj && ./svc.sh start)
+fi
