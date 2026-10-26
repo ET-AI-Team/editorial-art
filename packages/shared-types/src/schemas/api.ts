@@ -290,7 +290,7 @@ export type AdminReference = z.infer<typeof AdminReference>;
 
 export const SpendSummary = z.object({
   todayInr: z.number(),
-  dailyCapInr: z.number(),
+  dailyCapInr: z.number().nullable(),
   monthInr: z.number(),
   buildInr: z.number().nullable(),
   buildCapInr: z.number().nullable(),

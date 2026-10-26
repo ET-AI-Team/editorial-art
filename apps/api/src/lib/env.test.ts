@@ -20,7 +20,7 @@ describe('configuration', () => {
     const env = parseEnv(base);
     expect(env.EA_HOST).toBe('127.0.0.1');
     expect(env.EA_API_KEY_REQUIRED).toBe(true);
-    expect(env.EA_DAILY_SPEND_CAP_INR).toBe(3000);
+    expect(env.EA_DAILY_SPEND_CAP_INR).toBeUndefined();
     expect(env.EA_BUILD_SPEND_CAP_INR).toBeUndefined();
   });
 

@@ -6,7 +6,8 @@ import { StageError } from './errors';
 
 /**
  * Three caps, all checked before a paid call with that call's estimate:
- * per request, per UTC day, and the build period (only while EA_BUILD_SPEND_CAP_INR is set).
+ * per request, per UTC day (only while EA_DAILY_SPEND_CAP_INR is set), and the build period (only
+ * while EA_BUILD_SPEND_CAP_INR is set).
  * The real cost is recorded afterwards from token usage, in one transaction with the Attempt,
  * so concurrent calls can overshoot a cap by at most one call each.
  */
@@ -43,8 +44,10 @@ export async function assertCanSpend(estimateInr: number, requestId?: string | n
     const request = await db.request.findUnique({ where: { id: requestId }, select: { costInr: true, spendCapInr: true } });
     if (request && Number(request.costInr) + estimateInr > Number(request.spendCapInr)) throw new SpendCapError('request');
   }
-  const today = await ledgerTotal(utcDay());
-  if (today + estimateInr > config.EA_DAILY_SPEND_CAP_INR) throw new SpendCapError('day');
+  if (config.EA_DAILY_SPEND_CAP_INR !== undefined) {
+    const today = await ledgerTotal(utcDay());
+    if (today + estimateInr > config.EA_DAILY_SPEND_CAP_INR) throw new SpendCapError('day');
+  }
   if (config.EA_BUILD_SPEND_CAP_INR !== undefined) {
     const build = await ledgerTotal(BUILD_LEDGER_DAY);
     if (build + estimateInr > config.EA_BUILD_SPEND_CAP_INR) throw new SpendCapError('build');
@@ -119,11 +122,12 @@ let warnedForDay: string | null = null;
 
 async function warnNearDailyCap(): Promise<void> {
   const day = utcDay().toISOString().slice(0, 10);
-  if (warnedForDay === day) return;
+  const cap = env().EA_DAILY_SPEND_CAP_INR;
+  if (warnedForDay === day || cap === undefined) return;
   const total = await ledgerTotal(utcDay());
-  if (total >= 0.8 * env().EA_DAILY_SPEND_CAP_INR) {
+  if (total >= 0.8 * cap) {
     warnedForDay = day;
-    logger.warn({ todayInr: total, capInr: env().EA_DAILY_SPEND_CAP_INR }, 'spend_warning');
+    logger.warn({ todayInr: total, capInr: cap }, 'spend_warning');
   }
 }
 
@@ -137,7 +141,7 @@ export async function spendSummary() {
   });
   return {
     todayInr: await ledgerTotal(utcDay(now)),
-    dailyCapInr: config.EA_DAILY_SPEND_CAP_INR,
+    dailyCapInr: config.EA_DAILY_SPEND_CAP_INR ?? null,
     monthInr: Number(month._sum.costInr ?? 0),
     buildInr: config.EA_BUILD_SPEND_CAP_INR !== undefined ? await ledgerTotal(BUILD_LEDGER_DAY) : null,
     buildCapInr: config.EA_BUILD_SPEND_CAP_INR ?? null,

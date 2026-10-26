@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
   const today = await db.spendLedger.findUnique({ where: { day: utcDay() } });
   const spent = Number(today?.costInr ?? 0);
-  if (spent > 0.8 * config.EA_DAILY_SPEND_CAP_INR) alerts.push({ check: 'daily_spend', detail: { todayInr: spent, capInr: config.EA_DAILY_SPEND_CAP_INR } });
+  if (config.EA_DAILY_SPEND_CAP_INR !== undefined && spent > 0.8 * config.EA_DAILY_SPEND_CAP_INR) alerts.push({ check: 'daily_spend', detail: { todayInr: spent, capInr: config.EA_DAILY_SPEND_CAP_INR } });
 
   const stuck = await db.request.count({ where: { status: 'READING', updatedAt: { lt: new Date(Date.now() - 10 * MINUTE) } } });
   if (stuck > 0) alerts.push({ check: 'stuck_reading', detail: { requests: stuck } });

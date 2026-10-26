@@ -255,6 +255,6 @@ describe('spend', () => {
   test('reports today, the month and the caps', async () => {
     const res = await call('/admin/spend');
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ todayInr: 0, dailyCapInr: 3000, monthInr: 0 });
+    expect(res.body).toMatchObject({ todayInr: 0, dailyCapInr: null, monthInr: 0 });
   });
 });

@@ -56,7 +56,7 @@ const Schema = z
     EA_LIBRARY_CONCURRENCY: int(4, 1, 64),
 
     EA_REQUEST_SPEND_CAP_INR: inr(200),
-    EA_DAILY_SPEND_CAP_INR: inr(3000),
+    EA_DAILY_SPEND_CAP_INR: z.coerce.number().min(0).optional(),
     EA_BUILD_SPEND_CAP_INR: z.coerce.number().min(0).optional(),
 
     EA_RATE_CREATE_PER_HOUR: int(30, 1),
