@@ -1,0 +1,382 @@
+// editorial-art: the ET Article art service.
+//
+// Conventions (IMPLEMENTATION_PLAN.md, Step 3):
+// - Timestamps are timestamptz. Money is Decimal(12,4) rupees.
+// - No image bytes are stored: only Cloudinary URLs and public ids.
+// - Migrations are hand-written and checked with `prisma migrate diff --from-schema-datamodel`.
+//   A real database is never used as a shadow database.
+// - State changes are conditional updates on the current state (see src/pipeline/state.ts).
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum RequestStatus {
+  RECEIVED
+  READING
+  DIRECTIONS_READY
+  ACTIVE
+  HAS_FINAL
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum Sensitivity {
+  NONE
+  ELEVATED
+  HIGH
+  BLOCKED
+}
+
+enum BatchKind {
+  INITIAL
+  MORE
+  ANOTHER_STYLE
+  SERIES_MATCH
+}
+
+enum BatchStatus {
+  QUEUED
+  RUNNING
+  READY
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum OptionState {
+  PENDING
+  GENERATING
+  PREVIEW_READY
+  PREVIEW_FAILED
+  BLOCKED
+  FINALIZING
+  FINAL_READY
+  FINAL_FAILED
+  PACKING
+  PACK_READY
+  PACK_FAILED
+}
+
+enum PackStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+enum StyleStatus {
+  DRAFT
+  CURATING
+  LIVE
+  RETIRED
+}
+
+enum RefSource {
+  GENERATED
+  ET_ARCHIVE
+  LICENSED
+}
+
+enum RefStatus {
+  CANDIDATE
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+enum LikenessStatus {
+  ACTIVE
+  RETIRED
+}
+
+enum AttemptResult {
+  OK
+  REFUSED
+  ERROR
+  TIMEOUT
+}
+
+/// One pasted article and everything made from it.
+model Request {
+  id                String         @id @default(uuid())
+  /// `ear_` plus 22 base62 characters; the id AI Studio and the logs use.
+  publicId          String         @unique
+  /// Fingerprint of the internal API key that created it, never the key.
+  callerKeyId       String
+  actorUserId       String
+  actorWorkspaceId  String
+  clientRef         String?
+  status            RequestStatus  @default(RECEIVED)
+  failureCode       String?
+  failureReason     String?
+  articleTitle      String?
+  /// Null after retention (EA_ARTICLE_RETENTION_DAYS).
+  articleText       String?
+  articleHash       String
+  articleChars      Int
+  articleLang       String         @default("en")
+  articleExcerpt    String
+  /// Null after retention.
+  prompt            String?
+  styleId           String?
+  seriesOfRequestId String?
+  sensitivity       Sensitivity?
+  costInr           Decimal        @default(0) @db.Decimal(12, 4)
+  spendCapInr       Decimal        @db.Decimal(12, 4)
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+  expiresAt         DateTime       @db.Timestamptz(3)
+
+  briefs  Brief[]
+  batches Batch[]
+  options Option[]
+
+  @@unique([callerKeyId, clientRef])
+  @@index([actorWorkspaceId, createdAt(sort: Desc)])
+  @@index([actorUserId, status])
+  @@index([status, updatedAt])
+  @@index([articleHash])
+}
+
+/// What the read step understood. A re-read makes a new version; the latest is used.
+model Brief {
+  id                 String      @id @default(uuid())
+  requestId          String
+  request            Request     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  version            Int
+  headline           String
+  thesis             String
+  entities           Json
+  tone               String
+  desk               String
+  sensitivity        Sensitivity
+  sensitivityReasons String[]
+  altTextSeed        String
+  truncatedForRead   Boolean     @default(false)
+  model              String
+  createdAt          DateTime    @default(now()) @db.Timestamptz(3)
+
+  directions Direction[]
+
+  @@unique([requestId, version])
+}
+
+/// One of the three ways to show the story.
+model Direction {
+  id               String   @id @default(uuid())
+  briefId          String
+  brief            Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  rank             Int
+  title            String
+  idea             String
+  suggestedStyleId String
+  reason           String
+  /// [{ name, how: illustrated | symbolised | absent, likenessId? }]
+  peopleDepicted   Json
+  avoid            String[]
+
+  @@unique([briefId, rank])
+}
+
+/// Four options made together.
+model Batch {
+  id            String      @id @default(uuid())
+  requestId     String
+  request       Request     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  seq           Int
+  kind          BatchKind
+  styleId       String?
+  /// BatchPlan (packages/shared-types/src/schemas/batch-plan.ts).
+  directionPlan Json
+  status        BatchStatus @default(QUEUED)
+  requestedBy   String
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+  completedAt   DateTime?   @db.Timestamptz(3)
+
+  options Option[]
+
+  @@unique([requestId, seq])
+  @@index([status, createdAt])
+}
+
+/// One image, from preview to publish pack.
+model Option {
+  id              String      @id @default(uuid())
+  batchId         String
+  batch           Batch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  requestId       String
+  request         Request     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  index           Int
+  directionId     String
+  styleId         String
+  referenceIds    String[]
+  likenessIds     String[]
+  state           OptionState @default(PENDING)
+  previewAttempts Int         @default(0)
+  previewUrl      String?
+  previewPublicId String?
+  previewModel    String?
+  finalAttempts   Int         @default(0)
+  finalUrl        String?
+  finalPublicId   String?
+  finalModel      String?
+  judge           Json?
+  /// Cached subject boxes for smart cropping, as ratios.
+  subjectBoxes    Json?
+  blockedReason   String?
+  failureReason   String?
+  picked          Boolean     @default(false)
+  pickedAt        DateTime?   @db.Timestamptz(3)
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(3)
+
+  pack PublishPack?
+
+  @@unique([batchId, index])
+  @@index([requestId, state])
+  @@index([state, updatedAt])
+}
+
+/// The sizes, alt text, caption and credit for a finalized option.
+model PublishPack {
+  id        String     @id @default(uuid())
+  optionId  String     @unique
+  option    Option     @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  /// PackAsset[] (packages/shared-types/src/schemas/api.ts).
+  assets    Json
+  altText   String
+  caption   String
+  credit    String
+  status    PackStatus @default(PENDING)
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+}
+
+model StyleFamily {
+  id        String  @id @default(uuid())
+  slug      String  @unique
+  label     String
+  sortOrder Int
+  styles    Style[]
+}
+
+/// One of the 24 ET house styles (docs/STYLE_LIBRARY.md).
+model Style {
+  id                String      @id @default(uuid())
+  familyId          String
+  family            StyleFamily @relation(fields: [familyId], references: [id])
+  slug              String      @unique
+  label             String
+  summary           String
+  ruleSheet         Json
+  goodFor           String[]
+  safety            Json
+  status            StyleStatus @default(DRAFT)
+  minApprovedRefs   Int         @default(15)
+  sortOrder         Int
+  coverReferenceIds String[]
+  createdAt         DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @db.Timestamptz(3)
+  retiredAt         DateTime?   @db.Timestamptz(3)
+
+  references StyleReference[]
+
+  @@index([status, sortOrder])
+}
+
+/// An image the model sees to learn a style. Only approved references are ever sent.
+model StyleReference {
+  id             String                       @id @default(uuid())
+  styleId        String
+  style          Style                        @relation(fields: [styleId], references: [id])
+  source         RefSource
+  sourceNote     String
+  /// The neutral subject an exemplar was made from, so a re-run can skip it.
+  subjectHint    String?
+  url            String
+  publicId       String
+  width          Int
+  height         Int
+  description    String
+  subjects       String[]
+  mood           String
+  embedding      Unsupported("vector(1536)")?
+  embeddingModel String?
+  /// { passed, reason } from the automatic screen.
+  screen         Json?
+  status         RefStatus                    @default(CANDIDATE)
+  reviewedBy     String?
+  reviewedAt     DateTime?                    @db.Timestamptz(3)
+  reviewNote     String?
+  usageCount     Int                          @default(0)
+  pickCount      Int                          @default(0)
+  createdAt      DateTime                     @default(now()) @db.Timestamptz(3)
+
+  @@index([styleId, status])
+}
+
+/// Approved photos of a real person, for illustrated depiction only.
+model Likeness {
+  id          String         @id @default(uuid())
+  name        String
+  aliases     String[]
+  /// [{ url, publicId, width, height }]
+  photos      Json
+  consentNote String
+  approvedBy  String
+  status      LikenessStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+}
+
+/// One paid model call, success or not.
+model Attempt {
+  id           String        @id @default(uuid())
+  requestId    String?
+  optionId     String?
+  stage        String
+  provider     String
+  model        String
+  result       AttemptResult
+  errorCode    String?
+  inputTokens  Int           @default(0)
+  outputTokens Int           @default(0)
+  imageTokens  Int           @default(0)
+  costInr      Decimal       @db.Decimal(12, 4)
+  latencyMs    Int
+  startedAt    DateTime      @db.Timestamptz(3)
+  completedAt  DateTime      @db.Timestamptz(3)
+
+  @@index([startedAt])
+  @@index([requestId])
+  @@index([stage, result])
+}
+
+/// Spend per UTC day. The row for 1970-01-01 holds the build-period total.
+model SpendLedger {
+  day       DateTime @id @db.Date
+  costInr   Decimal  @default(0) @db.Decimal(12, 4)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid())
+  at          DateTime @default(now()) @db.Timestamptz(3)
+  actorUserId String?
+  callerKeyId String?
+  action      String
+  targetType  String
+  targetId    String
+  metadata    Json
+
+  @@index([at])
+  @@index([targetType, targetId])
+}
