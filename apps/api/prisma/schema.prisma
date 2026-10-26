@@ -224,6 +224,8 @@ model Option {
   previewUrl      String?
   previewPublicId String?
   previewModel    String?
+  /// Difference hash of the preview, to catch two near-identical options in one batch.
+  previewHash     String?
   finalAttempts   Int         @default(0)
   finalUrl        String?
   finalPublicId   String?

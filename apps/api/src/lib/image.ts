@@ -74,14 +74,23 @@ export async function toJpeg(buffer: Buffer, opts: { width?: number; height?: nu
   return img.jpeg({ quality: opts.quality ?? 85, progressive: true, mozjpeg: true }).toBuffer();
 }
 
-/** A solid test image with a label, used by the fake providers. */
+/**
+ * A test image for the fake providers. Its layout, not just its colour, varies with `hue`, so two
+ * fakes do not look like near copies to the duplicate check.
+ */
 export async function placeholderImage(width: number, height: number, hue: number, label: string): Promise<Buffer> {
-  const colour = `hsl(${Math.round(hue) % 360}, 45%, 55%)`;
+  const h = Math.round(hue) % 360;
+  const colour = `hsl(${h}, 45%, 55%)`;
+  const cx = width * (0.2 + ((h * 7) % 60) / 100);
+  const cy = height * (0.25 + ((h * 13) % 50) / 100);
+  const r = Math.min(width, height) * (0.12 + ((h * 3) % 20) / 100);
+  const rx = width * (((h * 11) % 70) / 100);
+  const ry = height * (((h * 17) % 70) / 100);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
     <rect width="100%" height="100%" fill="${colour}"/>
-    <circle cx="${width * 0.62}" cy="${height * 0.55}" r="${Math.min(width, height) * 0.22}" fill="white" fill-opacity="0.35"/>
-    <rect x="${width * 0.1}" y="${height * 0.62}" width="${width * 0.3}" height="${height * 0.2}" fill="black" fill-opacity="0.25"/>
-    <text x="24" y="48" font-size="28" font-family="sans-serif" fill="white" fill-opacity="0.01">${label.replace(/[<&>]/g, '')}</text>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="white" fill-opacity="0.55"/>
+    <rect x="${rx}" y="${ry}" width="${width * 0.3}" height="${height * 0.25}" fill="black" fill-opacity="0.45"/>
+    <title>${label.replace(/[<&>]/g, '')}</title>
   </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
