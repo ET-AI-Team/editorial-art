@@ -12,7 +12,7 @@ Group=et-product-dev
 WorkingDirectory=/data/products/editorial-art/apps/api
 EnvironmentFile=/data/products/editorial-art/.env
 Environment=NODE_ENV=production
-ExecStart=/data/abhigyan.raj/.bun/bin/bun run src/scripts/purge-expired.ts
+ExecStart=/data/abhigyan.raj/.bun/bin/bun run src/scripts/purge-expired.ts --dry-run
 UMask=0002
 NoNewPrivileges=true
 PrivateTmp=true
