@@ -1,0 +1,25 @@
+{
+  "name": "editorial-art",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --cwd apps/api dev",
+    "typecheck": "./node_modules/.bin/tsc --noEmit -p packages/shared-types && ./node_modules/.bin/tsc --noEmit -p apps/api",
+    "lint": "eslint .",
+    "test": "bun run --cwd packages/shared-types test && bun run --cwd apps/api test",
+    "test:unit": "bun run --cwd packages/shared-types test && bun run --cwd apps/api test:unit",
+    "verify": "bun run typecheck && bun run lint && bun run test:unit"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/bun": "1.3.14",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0"
+  }
+}
