@@ -1,0 +1,13 @@
+# health and spend alerts: every 5 minutes
+# Enable with: systemctl enable --now editorial-art-health.timer
+
+[Unit]
+Description=editorial-art: health and spend alerts (every 5 minutes)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=editorial-art-health.service
+
+[Install]
+WantedBy=timers.target

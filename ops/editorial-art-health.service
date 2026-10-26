@@ -1,0 +1,24 @@
+# health and spend alerts
+# Started by editorial-art-health.timer; runs once and exits. A tripped check exits 1, so the
+# unit shows as failed in `systemctl status` and `products-status` until the next clean run.
+
+[Unit]
+Description=editorial-art: health and spend alerts
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=oneshot
+User=abhigyan.raj
+Group=et-product-dev
+WorkingDirectory=/data/products/editorial-art/apps/api
+EnvironmentFile=/data/products/editorial-art/.env
+Environment=NODE_ENV=production
+ExecStart=/data/abhigyan.raj/.bun/bin/bun run src/scripts/check-health.ts
+UMask=0002
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/data/products/editorial-art/logs
+StandardOutput=append:/data/products/editorial-art/logs/editorial-art-health.log
+StandardError=append:/data/products/editorial-art/logs/editorial-art-health.log

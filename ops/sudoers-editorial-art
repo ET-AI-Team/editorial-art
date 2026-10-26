@@ -1,0 +1,10 @@
+# /etc/sudoers.d/editorial-art
+#
+# Lets the deploy runner (running as abhigyan.raj) restart and inspect exactly this one service,
+# without a password, and nothing else. Install with a syntax check first, never by editing
+# /etc/sudoers directly:
+#
+#   sudo install -m 0440 -o root -g root ops/sudoers-editorial-art /tmp/editorial-art.sudoers
+#   sudo visudo -cf /tmp/editorial-art.sudoers && sudo mv /tmp/editorial-art.sudoers /etc/sudoers.d/editorial-art
+
+abhigyan.raj ALL=(root) NOPASSWD: /usr/bin/systemctl restart editorial-art, /usr/bin/systemctl status editorial-art

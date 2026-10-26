@@ -1,0 +1,13 @@
+# Cloudinary orphan sweep: weekly, Monday 03:30 IST
+# Enable with: systemctl enable --now editorial-art-sweep.timer
+
+[Unit]
+Description=editorial-art: Cloudinary orphan sweep (weekly, Monday 03:30 IST)
+
+[Timer]
+OnCalendar=Sun *-*-* 22:00:00 UTC
+Persistent=true
+Unit=editorial-art-sweep.service
+
+[Install]
+WantedBy=timers.target

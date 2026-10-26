@@ -1,0 +1,13 @@
+# retention purge of article text and old previews: daily at 02:30 IST
+# Enable with: systemctl enable --now editorial-art-purge.timer
+
+[Unit]
+Description=editorial-art: retention purge of article text and old previews (daily at 02:30 IST)
+
+[Timer]
+OnCalendar=*-*-* 21:00:00 UTC
+Persistent=true
+Unit=editorial-art-purge.service
+
+[Install]
+WantedBy=timers.target

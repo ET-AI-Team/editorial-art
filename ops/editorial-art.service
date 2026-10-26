@@ -1,0 +1,36 @@
+# editorial-art: HTTP API, Socket.IO, BullMQ workers and the reaper in one process.
+# Installed into /etc/systemd/system with the box's install-units helper (copy kept in
+# /data/products/_infra/systemd/), then: systemctl enable --now editorial-art
+#
+# StartLimitIntervalSec and StartLimitBurst sit in [Unit], where current systemd reads them
+# (placed under [Service] they are ignored with a warning).
+
+[Unit]
+Description=editorial-art (ET Article art API + workers)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=abhigyan.raj
+Group=et-product-dev
+WorkingDirectory=/data/products/editorial-art/apps/api
+EnvironmentFile=/data/products/editorial-art/.env
+Environment=NODE_ENV=production
+ExecStart=/data/abhigyan.raj/.bun/bin/bun run src/server.ts
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=40
+UMask=0002
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/data/products/editorial-art/logs
+StandardOutput=append:/data/products/editorial-art/logs/editorial-art.log
+StandardError=append:/data/products/editorial-art/logs/editorial-art.log
+
+[Install]
+WantedBy=multi-user.target
