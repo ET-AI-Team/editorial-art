@@ -24,7 +24,7 @@ import { env } from '../../lib/env';
 import { ESTIMATE_INR } from '../../lib/pricing';
 import { SpendCapError } from '../../lib/spend-guard';
 import { describeImage, embedDescription } from '../../library/exemplars';
-import { ruleSummary, styleLibraryPath } from '../../library/styles';
+import { styleLibraryPath } from '../../library/styles';
 import { chat } from '../../pipeline/ai';
 import type { ImageData } from '../../providers';
 import { COLLECT_MANIFEST, LIBRARY_MANIFEST, parseFlags, pool, readJson, readResearch, writeJson, type CollectEntry, type LibraryEntry } from './common';
@@ -33,8 +33,10 @@ import { selectKept } from './select';
 const SYSTEM = 'You screen artworks by working illustrators for a house-style reference library. Answer only with JSON in the exact shape given. No prose.';
 
 export function artworkScreenPrompt(style: { label: string; ruleSheet: RuleSheetT; photoreal: boolean }): string {
-  return `House style: ${style.label}. Rules: ${ruleSummary(style.ruleSheet)}
-Score how closely this artwork matches the house style's medium, palette, line and texture, and check it for anything that keeps it out of the library.
+  const rs = style.ruleSheet;
+  return `House style: ${style.label}. Medium: ${rs.medium}. Line: ${rs.line}. Texture: ${rs.texture}.
+Score how closely this artwork matches the house style's medium, technique, mark-making and texture, and check it for anything that keeps it out of the library.
+These are real artists with their own palettes and compositions: do not mark an artwork down for its colours, subject or layout, only for being a different medium or technique.
 Return only JSON:
 { "onStyle": number from 0 to 10, "hasReadableText": boolean, "hasLogoOrWatermark": boolean, "hasSignature": boolean,
   "isPhotoOfRealPerson": boolean, "depictsRecognizablePerson": boolean, "hasLicensedCharacterOrBrand": boolean,
