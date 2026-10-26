@@ -4,8 +4,9 @@
  *   bun run library:screen -- --dir <collect output dir> [--research <file or dir>] [--max-inr 3000] [--style <slug>]
  *
  * Reads <dir>/collect-manifest.json. Each image gets one vision call (gpt-4.1, the judge model)
- * that scores it against the style's rule sheet and flags writing, logos, signatures, photos of
- * real people, explicit content and an AI-generated look. Per artist the best 8 passing images
+ * that scores it against the style's rule sheet and flags writing, logos, signatures, real
+ * people (photographed or drawn), licensed characters or brands, explicit content and an
+ * AI-generated look. Per artist the best 8 passing images
  * are kept, at most 24 per style; those are described and embedded with the same prompt and
  * model as every other library reference, and written to <dir>/library-manifest.json.
  *
@@ -36,12 +37,15 @@ export function artworkScreenPrompt(style: { label: string; ruleSheet: RuleSheet
 Score how closely this artwork matches the house style's medium, palette, line and texture, and check it for anything that keeps it out of the library.
 Return only JSON:
 { "onStyle": number from 0 to 10, "hasReadableText": boolean, "hasLogoOrWatermark": boolean, "hasSignature": boolean,
-  "isPhotoOfRealPerson": boolean, "explicitOrGory": boolean, "isAiGeneratedLooking": boolean, "reason": string }
+  "isPhotoOfRealPerson": boolean, "depictsRecognizablePerson": boolean, "hasLicensedCharacterOrBrand": boolean,
+  "explicitOrGory": boolean, "isAiGeneratedLooking": boolean, "reason": string }
 "onStyle": 10 is a textbook example of this house style, 7 is clearly this style, 4 is a neighbouring style, 0 is unrelated. Judge the look, not the subject.
 "hasReadableText": any letters, words, numbers or lettering that can be read, including titles, captions, mastheads and cover type.
 "hasLogoOrWatermark": any logo, brand or publication mark, watermark or stamp.
 "hasSignature": any signature, initials or monogram of the artist, however small.
 "isPhotoOfRealPerson": the image is or contains a photograph of a real person.${style.photoreal ? ' Photographs of objects and places are fine.' : ''} Drawn, painted or modelled figures are not photographs.
+"depictsRecognizablePerson": the image shows a real, identifiable person in any medium: a drawn, painted, modelled or caricatured likeness of a politician, actor, athlete, business leader or other public figure. Generic or anonymous figures are not.
+"hasLicensedCharacterOrBrand": the image shows a superhero, a cartoon or film character, a brand mascot, a product logo or recognisable branded packaging.
 "explicitOrGory": nudity, sexual content, gore, graphic injury or graphic violence.
 "isAiGeneratedLooking": the typical artefacts of AI image generation (garbled details, melted hands, smeared texture).
 "reason": at most 200 characters.`;
@@ -157,7 +161,7 @@ async function main(): Promise<void> {
       if (!existsSync(path)) return;
       const hash = createHash('sha256').update(readFileSync(path)).digest('hex');
       hashes.set(entry.file, hash);
-      if (cache.get(hash)?.screen) return;
+      if (ArtworkScreen.safeParse(cache.get(hash)?.screen).success) return;
       if (!(await guard(screenEstimate))) return;
       try {
         const style = rules.get(entry.style)!;
@@ -177,7 +181,7 @@ async function main(): Promise<void> {
 
   // 2. Keep the best per artist and per style, then describe and embed only those.
   const screened = collected
-    .filter((e) => hashes.has(e.file) && cache.get(hashes.get(e.file)!)?.screen)
+    .filter((e) => hashes.has(e.file) && ArtworkScreen.safeParse(cache.get(hashes.get(e.file)!)?.screen).success)
     .map((e) => ({ ...e, screen: cache.get(hashes.get(e.file)!)!.screen!, onStyle: cache.get(hashes.get(e.file)!)!.screen!.onStyle }));
   const kept = styles.flatMap((slug) => selectKept(screened.filter((e) => e.style === slug && artworkPasses(e.screen))));
   const describeEstimate = ESTIMATE_INR.text + ESTIMATE_INR.embed;

@@ -198,6 +198,10 @@ export const ArtworkScreen = z
     hasLogoOrWatermark: z.boolean(),
     hasSignature: z.boolean(),
     isPhotoOfRealPerson: z.boolean(),
+    /** A drawn, painted or caricatured likeness of a real, identifiable person (a politician, actor, CEO). */
+    depictsRecognizablePerson: z.boolean(),
+    /** Superheroes, cartoon characters, brand mascots, product logos: someone else's IP. */
+    hasLicensedCharacterOrBrand: z.boolean(),
     explicitOrGory: z.boolean(),
     isAiGeneratedLooking: z.boolean(),
     reason: z.string().max(300),
@@ -205,7 +209,10 @@ export const ArtworkScreen = z
   .strict();
 export type ArtworkScreen = z.infer<typeof ArtworkScreen>;
 
-/** On style (7 or more out of 10) and none of the flags. A signature is never cropped out, so it fails too. */
+/**
+ * On style (7 or more out of 10) and none of the flags. A signature is never cropped out, so it
+ * fails too. No real person, photographed or drawn, ever enters the library.
+ */
 export function artworkPasses(s: ArtworkScreen): boolean {
   return (
     s.onStyle >= 7 &&
@@ -213,6 +220,8 @@ export function artworkPasses(s: ArtworkScreen): boolean {
     !s.hasLogoOrWatermark &&
     !s.hasSignature &&
     !s.isPhotoOfRealPerson &&
+    !s.depictsRecognizablePerson &&
+    !s.hasLicensedCharacterOrBrand &&
     !s.explicitOrGory &&
     !s.isAiGeneratedLooking
   );

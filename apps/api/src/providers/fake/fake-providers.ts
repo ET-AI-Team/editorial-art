@@ -178,6 +178,8 @@ function fakeAnswer(p: ChatJsonParams): unknown {
         hasLogoOrWatermark: false,
         hasSignature: false,
         isPhotoOfRealPerson: false,
+        depictsRecognizablePerson: false,
+        hasLicensedCharacterOrBrand: false,
         explicitOrGory: false,
         isAiGeneratedLooking: false,
         reason: 'Matches the medium and palette.',

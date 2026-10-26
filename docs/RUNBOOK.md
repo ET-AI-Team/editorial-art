@@ -228,7 +228,7 @@ folder outside the repo.
    ```
 2. **Screen** (one gpt-4.1 call per image, plus a description and embedding for each keeper):
    keeps images that score 7 or more out of 10 on style with no text, logo, watermark, signature,
-   photo of a real person, explicit content or AI look; the best 8 per artist, at most 24 per style.
+   real person (photographed or drawn), licensed character or brand, explicit content or AI look; the best 8 per artist, at most 24 per style.
    Writes `library-manifest.json`. Stops before `--max-inr` (default 3000); answers are cached, so a
    re-run only pays for new images.
    ```bash

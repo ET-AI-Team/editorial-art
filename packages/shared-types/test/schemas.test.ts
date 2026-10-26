@@ -115,6 +115,8 @@ describe('model outputs', () => {
       hasLogoOrWatermark: false,
       hasSignature: false,
       isPhotoOfRealPerson: false,
+      depictsRecognizablePerson: false,
+      hasLicensedCharacterOrBrand: false,
       explicitOrGory: false,
       isAiGeneratedLooking: false,
       reason: 'Clear linocut gouge marks.',
@@ -123,6 +125,8 @@ describe('model outputs', () => {
     expect(artworkPasses({ ...pass, onStyle: 6.5 })).toBe(false);
     expect(artworkPasses({ ...pass, hasSignature: true })).toBe(false);
     expect(artworkPasses({ ...pass, isAiGeneratedLooking: true })).toBe(false);
+    expect(artworkPasses({ ...pass, depictsRecognizablePerson: true })).toBe(false);
+    expect(artworkPasses({ ...pass, hasLicensedCharacterOrBrand: true })).toBe(false);
     expect(ArtworkScreen.safeParse({ ...pass, onStyle: 11 }).success).toBe(false);
   });
 
