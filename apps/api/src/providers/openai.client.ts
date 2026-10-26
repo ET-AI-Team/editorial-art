@@ -76,7 +76,7 @@ export async function imageEdit(p: ImageGenParams): Promise<ImageGenResult> {
   const form = new FormData();
   form.append('model', p.model);
   form.append('prompt', p.prompt);
-  form.append('size', p.aspectRatio === '9:16' ? '1024x1536' : p.aspectRatio === '1:1' ? '1024x1024' : '1536x1024');
+  form.append('size', '1024x1024');
   form.append('quality', 'high');
   form.append('n', '1');
   p.images.forEach((image, i) => {

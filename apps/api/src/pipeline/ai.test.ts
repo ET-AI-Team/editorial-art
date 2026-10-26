@@ -41,7 +41,7 @@ describe('instrumented model calls', () => {
 
   test('a refusal is recorded as REFUSED at no cost', async () => {
     await expect(
-      generateImage({ stage: 'preview' }, { provider: 'gemini', model: 'gemini-3.1-flash-image', prompt: 'FAKE_REFUSE', images: [], aspectRatio: '16:9' }, 8)
+      generateImage({ stage: 'preview' }, { provider: 'gemini', model: 'gemini-3.1-flash-image', prompt: 'FAKE_REFUSE', images: [], aspectRatio: '1:1' }, 8)
     ).rejects.toThrow(/declined/);
     const [attempt] = await db.attempt.findMany();
     expect(attempt).toMatchObject({ result: 'REFUSED', errorCode: 'PROVIDER_REFUSED' });
@@ -54,7 +54,7 @@ describe('instrumented model calls', () => {
     const fake = createFakeProviders();
     setProviders(fake);
     await expect(
-      generateImage({ stage: 'preview' }, { provider: 'gemini', model: 'gemini-3.1-flash-image', prompt: 'p', images: [], aspectRatio: '16:9' }, 8)
+      generateImage({ stage: 'preview' }, { provider: 'gemini', model: 'gemini-3.1-flash-image', prompt: 'p', images: [], aspectRatio: '1:1' }, 8)
     ).rejects.toBeInstanceOf(SpendCapError);
     expect(fake.calls).toHaveLength(0);
     delete process.env.EA_DAILY_SPEND_CAP_INR;

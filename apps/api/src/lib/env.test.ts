@@ -13,7 +13,6 @@ const base = {
   EA_PREVIEW_FALLBACK_MODEL: 'gemini-3-pro-image',
   EA_FINAL_MODEL: 'gemini-3-pro-image',
   EA_FINAL_FALLBACK_MODEL: 'gpt-image-2',
-  EA_EXTEND_MODEL: 'gemini-3-pro-image',
 };
 
 describe('configuration', () => {

@@ -24,16 +24,16 @@ async function render(ctx: OptionContext, prompt: string, preview: ImageData, ex
   const config = env();
   const call = { requestId: ctx.request.id, optionId: ctx.option.id, stage: 'finalize' };
   try {
-    const r = await generateImage(call, { provider: 'gemini', model: config.EA_FINAL_MODEL, prompt, images: [preview, ...extras], aspectRatio: '16:9' }, ESTIMATE_INR.finalImage);
-    return { image: await cropToAspect(r.image.buffer, 16 / 9), model: r.model };
+    const r = await generateImage(call, { provider: 'gemini', model: config.EA_FINAL_MODEL, prompt, images: [preview, ...extras], aspectRatio: '1:1' }, ESTIMATE_INR.finalImage);
+    return { image: await cropToAspect(r.image.buffer, 1), model: r.model };
   } catch (error) {
     if (error instanceof StageError && error.code === 'SPEND_CAP_REACHED') throw error;
     const r = await generateImage(
       call,
-      { provider: 'openai', model: config.EA_FINAL_FALLBACK_MODEL, prompt: `${prompt}\n\nThe output must be 16:9 content centred in the canvas; it will be cropped to 1536x864.`, images: [preview, ...extras.slice(0, 3)], aspectRatio: '16:9' },
+      { provider: 'openai', model: config.EA_FINAL_FALLBACK_MODEL, prompt, images: [preview, ...extras.slice(0, 3)], aspectRatio: '1:1' },
       ESTIMATE_INR.openaiFinal
     );
-    return { image: await cropToAspect(r.image.buffer, 16 / 9), model: r.model };
+    return { image: await cropToAspect(r.image.buffer, 1), model: r.model };
   }
 }
 

@@ -41,7 +41,7 @@ export const PackAsset = z.object({
   webpUrl: z.string().url(),
   jpgUrl: z.string().url(),
   bytes: z.object({ webp: z.number().int(), jpg: z.number().int() }),
-  method: z.enum(['resize', 'crop', 'extend', 'letterbox']),
+  method: z.enum(['resize']),
 });
 export type PackAsset = z.infer<typeof PackAsset>;
 

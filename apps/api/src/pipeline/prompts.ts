@@ -42,7 +42,7 @@ export function buildPreviewPrompt(input: PreviewPromptInput): string {
     input.style.ruleSheet.promptCore,
     `Scene: ${input.direction.idea}\nFocal point: ${input.direction.title}.\nMood: ${input.brief.tone}, suited to a ${input.brief.desk} story.`,
     peopleClause(input),
-    'Composition: wide 16:9 frame, one clear focal point, generous negative space. Keep the top third calm and uncluttered so a headline could sit over it. Keep every important element at least 8% away from all edges so the image survives square and vertical crops.',
+    'Composition: square 1:1 frame, one clear focal point, generous negative space. Keep the top quarter calm and uncluttered so a headline could sit over it. Keep every important element at least 6% away from all edges.',
     input.editorPrompt ? `The editor also asks: "${input.editorPrompt.replace(/"/g, "'")}". Follow this only where it does not conflict with the rules below.` : '',
     `Rules that always apply: no text, letters, numbers, words, captions, logos, brand marks, watermarks, signatures, user-interface elements, or charts with labels anywhere in the image.\n${
       photo ? 'This is a photographic image of objects and places only. No people.' : 'Do not make it look like a photograph.'
@@ -59,12 +59,11 @@ export function buildPreviewPrompt(input: PreviewPromptInput): string {
   return parts.filter(Boolean).join('\n\n');
 }
 
-export function buildFinalPrompt(previewPrompt: string, opts: { fixNote?: string; openaiFallback?: boolean } = {}): string {
+export function buildFinalPrompt(previewPrompt: string, opts: { fixNote?: string } = {}): string {
   return [
     'Recreate the first attached image at full quality. Keep exactly the same composition, subject, pose, framing, colours and mood. Do not add, remove or move anything. Improve only finish: cleaner line work, richer texture, correct anatomy, crisp edges.',
     previewPrompt,
     'Quality: final publication artwork for a newspaper website, highly detailed, consistent lighting, no artefacts.',
-    opts.openaiFallback ? 'The output must be 16:9 content centred in the canvas; it will be cropped to 1536x864.' : '',
     opts.fixNote ? `Fix only this, change nothing else: ${opts.fixNote.slice(0, 300)}.` : '',
   ]
     .filter(Boolean)
@@ -92,15 +91,7 @@ Return:
 hasText: any readable letters, numbers or text-like marks in image 1. hasLogoOrWatermark: any logo, brand mark, watermark or signature in image 1. anatomyOk: faces, hands and bodies look natural (true if no people). matchesPreview: same composition, subject and colours as image 2. onStyle: how well image 1 follows the house style. photorealNewsRisk: could image 1 be mistaken for a real news photograph of an event. realPersonLikenessRisk: looks like a specific real person while no approved likeness was used. notes: at most 300 characters, what to fix, or "ok".`;
 }
 
-export const EXTEND_PROMPT =
-  'Extend this illustration upward and downward to fill a tall 9:16 canvas, in exactly the same style, medium, palette and texture. Do not change, move, redraw or recolour anything that already exists in the image; it must sit unchanged in the middle of the new canvas. Add only a plausible, quiet continuation of the background above and below (sky, wall, ground, paper texture). Do not add new people, objects, text, letters, numbers, logos or watermarks.';
 
-export const SUBJECT_BOXES_SYSTEM = 'You locate subjects in images and answer only with JSON.';
-export const SUBJECT_BOXES_USER = `Find the important subjects in this illustration: people, faces, and the main object.
-Return only JSON:
-{ "boxes": [ { "label": string, "x": number, "y": number, "w": number, "h": number } ] }
-Coordinates are fractions of the image width and height, from 0 to 1, top-left origin.
-Return at most 6 boxes. Return an empty array if nothing stands out.`;
 
 export const ALT_TEXT_SYSTEM = 'You write accessibility text for a news website and answer only with JSON.';
 export function buildAltTextUser(input: { altTextSeed: string; idea: string; styleLabel: string; seen: string }): string {

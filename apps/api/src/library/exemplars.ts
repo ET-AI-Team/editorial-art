@@ -165,7 +165,7 @@ export async function generateExemplar(styleId: string, subject: string, useAppr
       model: env().EA_PREVIEW_MODEL,
       prompt: exemplarPrompt(style, subject, references.length > 0),
       images: references,
-      aspectRatio: '16:9',
+      aspectRatio: '1:1',
     },
     ESTIMATE_INR.previewImage
   );

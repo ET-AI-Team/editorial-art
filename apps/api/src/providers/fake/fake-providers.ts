@@ -43,7 +43,7 @@ export function createFakeProviders(options: FakeOptions = {}): Providers & { st
         throw new ProviderRefusal(p.model, 'The image model declined this request.');
       }
     }
-    const [w, h] = p.aspectRatio === '9:16' ? [576, 1024] : p.aspectRatio === '1:1' ? [1024, 1024] : [1024, 576];
+    const [w, h] = [1024, 1024];
     const seed = `${p.prompt}|${p.model}|${p.images.length}|${calls.length}`;
     const buffer = await placeholderImage(w, h, hueOf(seed), seed.slice(0, 20));
     return {
@@ -163,8 +163,6 @@ function fakeAnswer(p: ChatJsonParams): unknown {
       };
     case 'alt_text':
       return { altText: 'Illustration of two chess kings facing each other across a boardroom table.', caption: 'A boardroom standoff the market is ignoring.' };
-    case 'subject_boxes':
-      return { boxes: [{ label: 'main subject', x: 0.45, y: 0.3, w: 0.3, h: 0.45 }] };
     case 'describe_reference':
       return {
         description: 'An editorial illustration of a coin balanced on a scale against a calm background, with a single strong focal point and generous negative space.',

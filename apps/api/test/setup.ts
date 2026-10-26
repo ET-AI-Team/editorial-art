@@ -1,6 +1,7 @@
 /**
  * Test environment: fake providers, the local test database and Redis, quiet logs. Set before any
- * module reads its configuration.
+ * module reads its configuration, and always overriding a developer's apps/api/.env (which Bun
+ * loads automatically and which may hold real keys).
  */
 const user = process.env.USER ?? 'postgres';
 
@@ -21,9 +22,11 @@ const defaults: Record<string, string> = {
   EA_PREVIEW_FALLBACK_MODEL: 'gemini-3-pro-image',
   EA_FINAL_MODEL: 'gemini-3-pro-image',
   EA_FINAL_FALLBACK_MODEL: 'gpt-image-2',
-  EA_EXTEND_MODEL: 'gemini-3-pro-image',
 };
 
 for (const [key, value] of Object.entries(defaults)) {
-  process.env[key] ??= value;
+  process.env[key] = value;
+}
+for (const key of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET', 'EA_BUILD_SPEND_CAP_INR']) {
+  delete process.env[key];
 }

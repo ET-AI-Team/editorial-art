@@ -98,6 +98,5 @@ export const ESTIMATE_INR = {
   embed: 0.01,
   previewImage: 8,
   finalImage: 15,
-  extendImage: 15,
   openaiFinal: 18,
 } as const;

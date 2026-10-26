@@ -16,7 +16,7 @@ function respond(data: unknown) {
   openaiHttp.post = mock(async () => ({ data })) as typeof openaiHttp.post;
 }
 
-const imageCall = { model: 'gemini-3.1-flash-image', prompt: 'p', images: [], aspectRatio: '16:9' as const };
+const imageCall = { model: 'gemini-3.1-flash-image', prompt: 'p', images: [], aspectRatio: '1:1' as const };
 
 describe('Gemini image client', () => {
   test('returns the inline image and usage', async () => {

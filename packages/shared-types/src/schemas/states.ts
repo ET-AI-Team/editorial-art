@@ -36,7 +36,8 @@ export type BatchKind = z.infer<typeof BatchKind>;
 export const PackStatus = z.enum(['PENDING', 'READY', 'FAILED']);
 export type PackStatus = z.infer<typeof PackStatus>;
 
-export const PACK_SIZES = ['16x9', '1x1', '1.91x1', '9x16'] as const;
+/** ET Articles makes one square image. */
+export const PACK_SIZES = ['1x1'] as const;
 export const PackSize = z.enum(PACK_SIZES);
 export type PackSize = z.infer<typeof PackSize>;
 

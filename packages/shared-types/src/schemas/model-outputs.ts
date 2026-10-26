@@ -154,10 +154,22 @@ export const SUBJECT_TAGS = [
   'health',
 ] as const;
 
+const SUBJECT_SET = new Set<string>(SUBJECT_TAGS);
+
+/** Tags outside the vocabulary are dropped rather than failing the description (models drift). */
+const SubjectTags = z
+  .array(z.string().max(40))
+  .min(1)
+  .max(10)
+  .transform((tags) => {
+    const known = [...new Set(tags.map((t) => t.trim().toLowerCase()).filter((t) => SUBJECT_SET.has(t)))].slice(0, 6) as (typeof SUBJECT_TAGS)[number][];
+    return known.length ? known : (['object'] as (typeof SUBJECT_TAGS)[number][]);
+  });
+
 export const ReferenceDescription = z
   .object({
     description: z.string().min(40).max(900),
-    subjects: z.array(z.enum(SUBJECT_TAGS)).min(1).max(6),
+    subjects: SubjectTags,
     mood: z.string().min(2).max(30),
   })
   .strict();
@@ -178,21 +190,3 @@ export function exemplarPasses(s: ExemplarScreen): boolean {
   return !s.hasText && !s.hasWatermarkOrSignature && s.anatomyOk && s.onStyle >= 3;
 }
 
-export const SubjectBoxes = z
-  .object({
-    boxes: z
-      .array(
-        z
-          .object({
-            label: z.string().max(40),
-            x: z.number().min(0).max(1),
-            y: z.number().min(0).max(1),
-            w: z.number().min(0).max(1),
-            h: z.number().min(0).max(1),
-          })
-          .strict()
-      )
-      .max(6),
-  })
-  .strict();
-export type SubjectBoxes = z.infer<typeof SubjectBoxes>;

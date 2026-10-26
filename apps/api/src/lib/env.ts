@@ -48,7 +48,6 @@ const Schema = z
     EA_PREVIEW_FALLBACK_MODEL: z.string().min(1),
     EA_FINAL_MODEL: z.string().min(1),
     EA_FINAL_FALLBACK_MODEL: z.string().min(1),
-    EA_EXTEND_MODEL: z.string().min(1),
 
     EA_READ_CONCURRENCY: int(6, 1, 64),
     EA_PREVIEW_CONCURRENCY: int(8, 1, 64),

@@ -40,7 +40,7 @@ async function generateWithFallback(ctx: OptionContext, prompt: string, images: 
   let lastError: unknown;
   for (const model of models) {
     try {
-      const result = await generateImage({ stage: 'preview', requestId: ctx.request.id, optionId: ctx.option.id }, { provider: 'gemini', model, prompt, images, aspectRatio: '16:9' }, ESTIMATE_INR.previewImage);
+      const result = await generateImage({ stage: 'preview', requestId: ctx.request.id, optionId: ctx.option.id }, { provider: 'gemini', model, prompt, images, aspectRatio: '1:1' }, ESTIMATE_INR.previewImage);
       return { image: result.image, model: result.model };
     } catch (error) {
       if (error instanceof StageError && error.code === 'SPEND_CAP_REACHED') throw error;
@@ -54,14 +54,14 @@ async function generateWithFallback(ctx: OptionContext, prompt: string, images: 
 
 /** Checks the image is usable and not a near copy of a sibling; returns its processed form. */
 async function checkImage(ctx: OptionContext, image: ImageData): Promise<{ webp: Buffer; hash: string }> {
-  const cropped = await cropToAspect(image.buffer, 16 / 9);
+  const cropped = await cropToAspect(image.buffer, 1);
   if (await isBlank(cropped)) throw new BadModelOutput('The image came back blank.');
   const hash = await dHash(cropped);
   const siblings = await db.option.findMany({ where: { batchId: ctx.batch.id, id: { not: ctx.option.id }, previewHash: { not: null } }, select: { previewHash: true } });
   if (siblings.some((s) => hammingDistance(BigInt(`0x${s.previewHash}`), hash) < NEAR_DUPLICATE)) {
     throw new BadModelOutput('The image is a near copy of another option.');
   }
-  return { webp: await toWebp(cropped, { width: 1024, height: 576, quality: 80 }), hash: hash.toString(16).padStart(16, '0') };
+  return { webp: await toWebp(cropped, { width: 1024, height: 1024, quality: 80 }), hash: hash.toString(16).padStart(16, '0') };
 }
 
 export async function runPreview(optionId: string): Promise<void> {

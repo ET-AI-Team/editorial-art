@@ -58,7 +58,7 @@ describe('paste to publish pack, with fake providers', () => {
     expect((list.json.items as unknown[]).length).toBe(1);
   });
 
-  test('finalizing an option makes the final and a four-size pack with alt text', async () => {
+  test('finalizing an option makes the square final with alt text, caption and credit', async () => {
     const d = await detail(requestId);
     const option = d.batches[0]!.options[1]!;
     const res = await call(h.base, `/options/${option.id}/finalize`, { method: 'POST' });
@@ -68,20 +68,20 @@ describe('paste to publish pack, with fake providers', () => {
     const pack = await call(h.base, `/options/${option.id}/pack`);
     expect(pack.status).toBe(200);
     const assets = pack.json.assets as { size: string; width: number; height: number; method: string }[];
-    expect(assets.map((a) => `${a.size}:${a.width}x${a.height}`)).toEqual(['16x9:1600x900', '1x1:1080x1080', '1.91x1:1200x628', '9x16:1080x1920']);
+    expect(assets.map((a) => `${a.size}:${a.width}x${a.height}`)).toEqual(['1x1:1024x1024']);
     expect(pack.json.altText).toMatch(/^Illustration/);
     expect(pack.json.credit).toBe('AI illustration: ET');
     expect((await detail(requestId)).status).toBe('HAS_FINAL');
   });
 
-  test('the ZIP holds every size in both formats and a readme', async () => {
+  test('the ZIP holds the image as JPG and WebP, and a readme', async () => {
     const d = await detail(requestId);
     const option = d.batches[0]!.options[1]!;
     const res = await fetch(`${h.base}/api/v1/options/${option.id}/pack.zip`, { headers: MEMBER });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/zip');
     const files = Object.keys(unzipSync(new Uint8Array(await res.arrayBuffer())));
-    expect(files).toHaveLength(9);
+    expect(files).toHaveLength(3);
     expect(files).toContain('README.txt');
   });
 
