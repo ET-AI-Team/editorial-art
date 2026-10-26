@@ -76,3 +76,15 @@ export async function hasLiveJob(name: QueueName, jobId: string): Promise<boolea
   const state = await job.getState();
   return state === 'waiting' || state === 'active' || state === 'delayed' || state === 'prioritized' || state === 'waiting-children';
 }
+
+/**
+ * Adds a read job even when a finished job with the same id is still kept in Redis (which would
+ * otherwise make the add a silent no-op).
+ */
+export async function requeueRead(requestId: string): Promise<void> {
+  const id = `read-${requestId}`;
+  if (await hasLiveJob('read', id)) return;
+  const old = await queue('read').getJob(id);
+  if (old) await old.remove().catch(() => undefined);
+  await enqueue.read({ requestId });
+}
