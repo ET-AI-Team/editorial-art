@@ -88,6 +88,39 @@ export async function liveLibrary(slugs: string[], refs = 4): Promise<Map<string
   return ids;
 }
 
+/**
+ * Adds `artists` artists with `perArtist` approved ARTIST references each to a style, the way
+ * library:import does. Returns the references with their artist.
+ */
+export async function artistReferences(styleId: string, artists: number, perArtist: number, tag = 'artist'): Promise<{ id: string; artistId: string }[]> {
+  const out: { id: string; artistId: string }[] = [];
+  for (let a = 0; a < artists; a++) {
+    const slug = `${tag}-${a}`;
+    const artist = await db.artist.upsert({ where: { slug }, create: { slug, name: `Test Artist ${a}`, portfolioUrl: `https://example.com/${slug}` }, update: {} });
+    for (let i = 0; i < perArtist; i++) {
+      const ref = await db.styleReference.create({
+        data: {
+          styleId,
+          source: 'ARTIST',
+          sourceNote: `Test Artist ${a}, https://example.com/${slug}/work-${i}`,
+          sourceUrl: `https://example.com/${slug}/work-${i}`,
+          artistId: artist.id,
+          url: `https://res.cloudinary.com/fake/image/upload/v1/test/${slug}-${styleId.slice(0, 8)}-${i}.webp`,
+          publicId: `test/${slug}-${styleId.slice(0, 8)}-${i}`,
+          width: 1600,
+          height: 1200,
+          description: `Artwork ${i} by artist ${a}: a calm symbolic scene with one focal point.`,
+          subjects: [['money', 'city', 'chart', 'sky'][i % 4]!],
+          mood: 'calm',
+          status: 'APPROVED',
+        },
+      });
+      out.push({ id: ref.id, artistId: artist.id });
+    }
+  }
+  return out;
+}
+
 export async function call(base: string, path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
   const res = await fetch(`${base}/api/v1${path}`, {
     method: init.method ?? 'GET',

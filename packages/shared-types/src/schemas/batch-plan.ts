@@ -21,6 +21,8 @@ export const BatchPlan = z
     kind: BatchKind,
     entries: z.array(BatchPlanEntry).length(4),
     promptDropped: z.boolean().default(false),
+    /** The reference every option of this batch was made with, when the editor pinned one. */
+    pinnedReferenceId: Id.nullable().default(null),
   })
   .strict();
 export type BatchPlan = z.infer<typeof BatchPlan>;

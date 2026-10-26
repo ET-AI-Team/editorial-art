@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { resetDb } from '../../test/db';
 import { db } from '../lib/db';
-import { chooseReferences, type RefCandidate } from './references';
+import { chooseByArtist, chooseReferences, pickArtist, type RefCandidate } from './references';
 import { liveStyles, seedStyles, styleAllowed, styleBadges } from './styles';
 
 beforeAll(resetDb);
@@ -32,7 +32,7 @@ describe('style library', () => {
 });
 
 describe('reference choice', () => {
-  const ref = (id: string, similarity: number, subject: string, pickCount = 0): RefCandidate => ({ id, url: `u/${id}`, subjects: [subject], similarity, pickCount });
+  const ref = (id: string, similarity: number, subject: string, pickCount = 0, artistId: string | null = null): RefCandidate => ({ id, url: `u/${id}`, subjects: [subject], similarity, pickCount, artistId });
 
   test('nearest first, at most two sharing a subject', () => {
     const chosen = chooseReferences([ref('a', 0.9, 'money'), ref('b', 0.89, 'money'), ref('c', 0.88, 'money'), ref('d', 0.7, 'city')], new Map());
@@ -46,5 +46,41 @@ describe('reference choice', () => {
 
   test('fills from what exists when there are fewer than asked', () => {
     expect(chooseReferences([ref('a', 0.5, 'x')], new Map())).toHaveLength(1);
+  });
+
+  test('one artist per option, a different artist for each option of a batch', () => {
+    const candidates = ['a', 'b', 'c', 'd'].flatMap((artist, i) =>
+      [0, 1, 2, 3].map((n) => ref(`${artist}${n}`, 0.9 - i * 0.05 - n * 0.01, ['money', 'city', 'chart', 'sky'][n]!, 0, artist))
+    );
+    const inBatch = new Map<string, number>();
+    const artists: string[] = [];
+    for (let option = 0; option < 4; option++) {
+      const picked = chooseByArtist(candidates, new Map(), inBatch, new Set());
+      expect(picked.refs).toHaveLength(3);
+      expect(new Set(picked.refs.map((r) => r.artistId))).toEqual(new Set([picked.artistKey]));
+      inBatch.set(picked.artistKey!, (inBatch.get(picked.artistKey!) ?? 0) + 1);
+      artists.push(picked.artistKey!);
+    }
+    expect(artists).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  test('artists used earlier in the request wait their turn; with fewer artists than options, the least used repeats', () => {
+    const groups = [
+      { key: 'a', score: 0.9 },
+      { key: 'b', score: 0.8 },
+    ];
+    expect(pickArtist(groups, new Map(), new Set(['a']))).toBe('b');
+    expect(pickArtist(groups, new Map([['b', 1]]), new Set(['a']))).toBe('a');
+    expect(pickArtist(groups, new Map([['a', 2], ['b', 1]]), new Set())).toBe('b');
+    expect(pickArtist([], new Map(), new Set())).toBeNull();
+  });
+
+  test('references without an artist still fill three slots, led by a different one per option', () => {
+    const candidates = [ref('x', 0.9, 'money'), ref('y', 0.8, 'city'), ref('z', 0.7, 'sky'), ref('w', 0.6, 'chart')];
+    const first = chooseByArtist(candidates, new Map(), new Map(), new Set());
+    const second = chooseByArtist(candidates, new Map(), new Map([[first.artistKey!, 1]]), new Set());
+    expect(first.refs.map((r) => r.id)).toEqual(['x', 'y', 'z']);
+    expect(second.refs[0]!.id).toBe('y');
+    expect(second.refs).toHaveLength(3);
   });
 });

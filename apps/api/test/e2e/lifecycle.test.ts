@@ -3,7 +3,7 @@ import { unzipSync } from 'fflate';
 import type { RequestDetail } from '@editorial-art/shared-types';
 import { RequestDetail as RequestDetailSchema } from '@editorial-art/shared-types';
 import { db } from '../../src/lib/db';
-import { ARTICLE, MEMBER, OTHER_WORKSPACE, call, liveLibrary, startHarness, until, type Harness } from '../harness';
+import { ARTICLE, MEMBER, OTHER_WORKSPACE, artistReferences, call, liveLibrary, startHarness, until, type Harness } from '../harness';
 
 let h: Harness;
 let styleIds: Map<string, string>;
@@ -131,6 +131,90 @@ describe('paste to publish pack, with fake providers', () => {
     const row = await db.request.findUniqueOrThrow({ where: { publicId: requestId } });
     const sum = await db.attempt.aggregate({ _sum: { costInr: true }, where: { requestId: row.id } });
     expect(Number(sum._sum.costInr)).toBeCloseTo(Number(row.costInr), 3);
+  });
+});
+
+describe('the artist library', () => {
+  let refs: { id: string; artistId: string }[] = [];
+  const artistOf = (id: string) => refs.find((r) => r.id === id)?.artistId;
+
+  beforeAll(async () => {
+    // Watercolour becomes an artist library: five artists, four works each, no generated images.
+    const style = styleIds.get('watercolour')!;
+    await db.styleReference.updateMany({ where: { styleId: style, source: 'GENERATED' }, data: { status: 'RETIRED' } });
+    refs = await artistReferences(style, 5, 4);
+  });
+
+  async function optionsOf(publicId: string, seq: number) {
+    const request = await db.request.findUniqueOrThrow({ where: { publicId } });
+    return db.option.findMany({ where: { requestId: request.id, batch: { seq } }, orderBy: { index: 'asc' } });
+  }
+
+  test('each option takes three references by one artist, and the four options four different artists', async () => {
+    const res = await call(h.base, '/requests', { method: 'POST', body: { articleText: ARTICLE.replace('Monday', 'Wednesday'), styleId: styleIds.get('watercolour') } });
+    expect(res.status).toBe(202);
+    await settledBatch(res.json.requestId as string, 1);
+    const options = await optionsOf(res.json.requestId as string, 1);
+    expect(options).toHaveLength(4);
+    const artists = options.map((o) => {
+      expect(o.referenceIds).toHaveLength(3);
+      const own = new Set(o.referenceIds.map(artistOf));
+      expect(own.size).toBe(1);
+      return [...own][0];
+    });
+    expect(new Set(artists).size).toBe(4);
+  });
+
+  test('a pinned reference goes into every option, with two more by the same artist', async () => {
+    const pin = refs[6]!;
+    const res = await call(h.base, '/requests', {
+      method: 'POST',
+      body: { articleText: ARTICLE.replace('Monday', 'Thursday'), styleId: styleIds.get('watercolour'), pinnedReferenceId: pin.id },
+    });
+    expect(res.status).toBe(202);
+    const publicId = res.json.requestId as string;
+    await settledBatch(publicId, 1);
+    for (const o of await optionsOf(publicId, 1)) {
+      expect(o.referenceIds[0]).toBe(pin.id);
+      expect(o.referenceIds).toHaveLength(3);
+      expect(o.referenceIds.every((id) => artistOf(id) === pin.artistId)).toBe(true);
+    }
+
+    const other = refs[13]!;
+    const another = await call(h.base, `/requests/${publicId}/batches`, {
+      method: 'POST',
+      body: { kind: 'ANOTHER_STYLE', styleId: styleIds.get('watercolour'), pinnedReferenceId: other.id },
+    });
+    expect(another.status).toBe(202);
+    await settledBatch(publicId, 2);
+    const options = await optionsOf(publicId, 2);
+    expect(options.every((o) => o.referenceIds[0] === other.id && o.referenceIds.every((id) => artistOf(id) === other.artistId))).toBe(true);
+    const batch = await db.batch.findUniqueOrThrow({ where: { id: options[0]!.batchId } });
+    expect((batch.directionPlan as { pinnedReferenceId: string }).pinnedReferenceId).toBe(other.id);
+  });
+
+  test('a pin from another style, or without a style, is refused', async () => {
+    const foreign = await db.styleReference.findFirstOrThrow({ where: { styleId: styleIds.get('ink-wash'), status: 'APPROVED' } });
+    const create = await call(h.base, '/requests', {
+      method: 'POST',
+      body: { articleText: ARTICLE, styleId: styleIds.get('watercolour'), pinnedReferenceId: foreign.id },
+    });
+    expect(create.status).toBe(400);
+    expect(create.json.error?.code).toBe('VALIDATION_ERROR');
+    expect(create.json.error?.message).toContain('approved reference of the chosen style');
+
+    const noStyle = await call(h.base, '/requests', { method: 'POST', body: { articleText: ARTICLE, pinnedReferenceId: refs[0]!.id } });
+    expect(noStyle.status).toBe(400);
+    expect(noStyle.json.error?.message).toContain('styleId');
+
+    const list = await call(h.base, '/requests');
+    const existing = (list.json.items as { requestId: string; status: string }[]).find((r) => r.status === 'ACTIVE')!;
+    const batch = await call(h.base, `/requests/${existing.requestId}/batches`, {
+      method: 'POST',
+      body: { kind: 'ANOTHER_STYLE', styleId: styleIds.get('watercolour'), pinnedReferenceId: foreign.id },
+    });
+    expect(batch.status).toBe(400);
+    expect(batch.json.error?.code).toBe('VALIDATION_ERROR');
   });
 });
 

@@ -2,7 +2,8 @@ import type { BatchKind, BatchPlanEntry, SensitivityLevel } from '@editorial-art
 import { db } from '../lib/db';
 import { env } from '../lib/env';
 import { StageError } from '../lib/errors';
-import { chooseReferences, nearestApprovedReferences } from '../library/references';
+import { logger } from '../lib/logger';
+import { artistKey, chooseByArtist, chooseReferences, nearestApprovedReferences, type RefCandidate } from '../library/references';
 import { stylesByIds, styleAllowed, type StyleView } from '../library/styles';
 import { enqueue } from '../queues/queues';
 import { embedText } from './ai';
@@ -13,6 +14,11 @@ import type { PeopleEntry } from './read';
 /**
  * Making a batch of four (Step 6.4): which direction and style each option uses, and which three
  * references go with it. The plan is stored on the batch so a retry uses the same choices.
+ *
+ * References: each option takes its three from one artist, and the four options take four
+ * different artists where the style has that many, preferring artists this request has not
+ * used yet. A pinned reference overrides that: every option gets the pin and the two nearest
+ * references by the same artist.
  */
 
 export interface CreateBatchInput {
@@ -23,6 +29,26 @@ export interface CreateBatchInput {
   fromOptionId?: string;
   fromBatchId?: string;
   seriesOfRequestId?: string;
+  /** ANOTHER_STYLE only; INITIAL takes the request's own pin. */
+  pinnedReferenceId?: string;
+}
+
+/** A pin must be an approved reference of the batch's style. */
+export async function validatePin(referenceId: string, styleId: string): Promise<{ id: string; artistId: string | null }> {
+  const ref = await db.styleReference.findUnique({ where: { id: referenceId }, select: { id: true, styleId: true, status: true, artistId: true } });
+  if (!ref || ref.styleId !== styleId || ref.status !== 'APPROVED') {
+    throw new StageError('VALIDATION_ERROR', 'The pinned reference must be an approved reference of the chosen style.', false);
+  }
+  return { id: ref.id, artistId: ref.artistId };
+}
+
+/** The pin plus the two references by the same artist nearest to this option's idea. */
+async function pinnedReferences(pin: { id: string; artistId: string | null }, styleId: string, candidates: RefCandidate[], vector: number[] | null): Promise<string[]> {
+  const sameArtist = (c: RefCandidate) => c.id !== pin.id && c.artistId === pin.artistId;
+  let mates = candidates.filter(sameArtist);
+  if (mates.length < 2 && pin.artistId) mates = (await nearestApprovedReferences(styleId, vector, 12, { artistId: pin.artistId })).filter(sameArtist);
+  const nearest = [...mates].sort((a, b) => Number(b.similarity) - Number(a.similarity) || b.pickCount - a.pickCount).slice(0, 2);
+  return [pin.id, ...nearest.map((c) => c.id)];
 }
 
 interface DirectionRow {
@@ -95,8 +121,10 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
   let slots: { directionId: string; styleId: string }[];
   let seriesSourceOptionId: string | null = null;
   let seriesRefIds: string[] = [];
+  let pin: { id: string; artistId: string | null } | null = null;
   if (input.kind === 'ANOTHER_STYLE') {
     if (!input.styleId) throw new StageError('VALIDATION_ERROR', 'Choose a style.', false);
+    if (input.pinnedReferenceId) pin = await validatePin(input.pinnedReferenceId, input.styleId);
     slots = planSlots('ANOTHER_STYLE', directions, { styleId: input.styleId });
   } else if (input.kind === 'MORE') {
     if (input.fromOptionId) {
@@ -119,6 +147,13 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
     slots = planSlots('SERIES_MATCH', directions, { styleId: picked.styleId });
   } else {
     slots = planSlots('INITIAL', directions, { requestStyleId: request.styleId });
+    if (request.pinnedReferenceId && request.styleId) {
+      // Checked when the request was made; a pin retired since then is dropped, not fatal.
+      pin = await validatePin(request.pinnedReferenceId, request.styleId).catch(() => {
+        logger.warn({ eaRequestId: request.publicId, referenceId: request.pinnedReferenceId }, 'pinned_reference_dropped');
+        return null;
+      });
+    }
   }
 
   const styles = await stylesByIds(slots.map((s) => s.styleId));
@@ -128,10 +163,14 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
     if (!styleAllowed(style, level)) throw new StageError('STYLE_NOT_ALLOWED_FOR_STORY', `"${style.label}" isn't used for stories like this one.`, false);
   }
 
-  // References: nearest to each direction's idea within the option's style, avoiding reuse.
+  // References: nearest to each direction's idea within the option's style, one artist per
+  // option, avoiding artists and references this request already used.
   const previous = await db.option.findMany({ where: { requestId: request.id }, select: { referenceIds: true } });
   const used = new Map<string, number>();
   for (const id of previous.flatMap((o) => o.referenceIds)) used.set(id, (used.get(id) ?? 0) + 1);
+  const previousRefs = used.size ? await db.styleReference.findMany({ where: { id: { in: [...used.keys()] } }, select: { id: true, artistId: true } }) : [];
+  const usedArtists = new Set(previousRefs.map(artistKey));
+  const batchArtists = new Map<string, number>();
   const vectors = new Map<string, number[] | null>();
   const entries: BatchPlanEntry[] = [];
   for (const [index, slot] of slots.entries()) {
@@ -139,16 +178,26 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
     if (!vectors.has(direction.id)) {
       vectors.set(direction.id, await embedText({ stage: 'embed', requestId: request.id }, `${direction.idea}\n${brief.thesis}`).catch(() => null));
     }
-    const candidates = await nearestApprovedReferences(slot.styleId, vectors.get(direction.id) ?? null);
+    const vector = vectors.get(direction.id) ?? null;
+    const candidates = await nearestApprovedReferences(slot.styleId, vector);
     const seriesFirst = candidates.filter((c) => seriesRefIds.includes(c.id));
-    const chosen = seriesFirst.length ? [...seriesFirst, ...chooseReferences(candidates.filter((c) => !seriesRefIds.includes(c.id)), used)].slice(0, 3) : chooseReferences(candidates, used);
-    for (const c of chosen) used.set(c.id, (used.get(c.id) ?? 0) + 1);
+    let chosen: string[];
+    if (pin) {
+      chosen = await pinnedReferences(pin, slot.styleId, candidates, vector);
+    } else if (seriesFirst.length) {
+      chosen = [...seriesFirst, ...chooseReferences(candidates.filter((c) => !seriesRefIds.includes(c.id)), used)].slice(0, 3).map((c) => c.id);
+    } else {
+      const picked = chooseByArtist(candidates, used, batchArtists, usedArtists);
+      if (picked.artistKey) batchArtists.set(picked.artistKey, (batchArtists.get(picked.artistKey) ?? 0) + 1);
+      chosen = picked.refs.map((c) => c.id);
+    }
+    for (const id of chosen) used.set(id, (used.get(id) ?? 0) + 1);
     const people = peopleFor(direction.peopleDepicted, styles.get(slot.styleId)!, level);
     entries.push({
       index,
       directionId: slot.directionId,
       styleId: slot.styleId,
-      referenceIds: chosen.map((c) => c.id),
+      referenceIds: chosen,
       likenessIds: people.likenessIds,
       peopleMode: people.mode,
       seriesSourceOptionId,
@@ -164,7 +213,7 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
         seq: (last?.seq ?? 0) + 1,
         kind: input.kind,
         styleId: singleStyle,
-        directionPlan: { kind: input.kind, entries, promptDropped: false } as object,
+        directionPlan: { kind: input.kind, entries, promptDropped: false, pinnedReferenceId: pin?.id ?? null } as object,
         requestedBy: input.requestedBy,
         options: {
           create: entries.map((e) => ({

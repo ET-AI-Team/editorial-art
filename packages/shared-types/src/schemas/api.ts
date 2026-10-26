@@ -20,6 +20,8 @@ export const CreateRequestBody = z
     articleTitle: safeText(1, TITLE_MAX_CHARS).optional(),
     prompt: safeText(1, PROMPT_MAX_CHARS).optional().nullable(),
     styleId: Id.optional().nullable(),
+    /** An approved reference of `styleId`: every option of the first batch is made from it. */
+    pinnedReferenceId: Id.optional().nullable(),
     seriesOfRequestId: PublicRequestId.optional().nullable(),
     clientRef: z
       .string()
@@ -153,7 +155,7 @@ export const ArticleTextResponse = z.object({ title: z.string().nullable(), text
 
 export const CreateBatchBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('MORE'), fromOptionId: Id.optional(), fromBatchId: Id.optional() }).strict(),
-  z.object({ kind: z.literal('ANOTHER_STYLE'), styleId: Id }).strict(),
+  z.object({ kind: z.literal('ANOTHER_STYLE'), styleId: Id, pinnedReferenceId: Id.optional() }).strict(),
   z.object({ kind: z.literal('SERIES_MATCH'), seriesOfRequestId: PublicRequestId }).strict(),
 ]);
 export type CreateBatchBody = z.infer<typeof CreateBatchBody>;

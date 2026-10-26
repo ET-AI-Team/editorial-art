@@ -22,7 +22,7 @@ import { liveStyles, styleAllowed } from '../library/styles';
 import { actorOf } from '../middleware/actor';
 import { rateLimit } from '../middleware/rate-limit';
 import { parseQuery, validateBody } from '../middleware/validate';
-import { createBatch } from '../pipeline/batches';
+import { createBatch, validatePin } from '../pipeline/batches';
 import { emitRequestStatus } from '../pipeline/events';
 import { moveRequest } from '../pipeline/state';
 import { enqueue } from '../queues/queues';
@@ -87,6 +87,12 @@ requestsRouter.post(
       const style = await db.style.findUnique({ where: { id: body.styleId } });
       if (!style || style.status !== 'LIVE') throw new ApiError('STYLE_NOT_LIVE', 400, 'That style is not available.');
     }
+    if (body.pinnedReferenceId) {
+      if (!body.styleId) {
+        throw ApiError.validation({ fieldErrors: { pinnedReferenceId: ['needs styleId'] } }, 'A pinned reference needs its style: send styleId as well.');
+      }
+      await validatePin(body.pinnedReferenceId, body.styleId).catch(stageToApi);
+    }
     if (body.seriesOfRequestId) {
       const series = await db.request.findFirst({ where: { publicId: body.seriesOfRequestId, actorWorkspaceId: actor.workspaceId } });
       if (!series) throw new ApiError('SERIES_NOT_FOUND', 404, 'Pick a previous story from this workspace.');
@@ -114,13 +120,14 @@ requestsRouter.post(
         articleExcerpt: excerpt(article.text, 400),
         prompt: body.prompt?.trim() || null,
         styleId: body.styleId ?? null,
+        pinnedReferenceId: body.pinnedReferenceId ?? null,
         seriesOfRequestId: body.seriesOfRequestId ?? null,
         spendCapInr: config.EA_REQUEST_SPEND_CAP_INR,
         expiresAt: new Date(now.getTime() + config.EA_ARTICLE_RETENTION_DAYS * 86_400_000),
       },
     });
     await enqueue.read({ requestId: row.id });
-    await audit({ action: 'request.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, callerKeyId: req.callerKeyId, metadata: { chars: row.articleChars, removedLines: article.removedLines, styleId: row.styleId } });
+    await audit({ action: 'request.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, callerKeyId: req.callerKeyId, metadata: { chars: row.articleChars, removedLines: article.removedLines, styleId: row.styleId, pinnedReferenceId: row.pinnedReferenceId } });
     req.log?.info({ eaRequestId: row.publicId, chars: row.articleChars }, 'request_created');
     res.status(202).json({ requestId: row.publicId, status: row.status, createdAt: row.createdAt.toISOString() });
   })
@@ -186,11 +193,11 @@ requestsRouter.post(
       requestId: row.id,
       kind: body.kind,
       requestedBy: actor.userId,
-      ...(body.kind === 'ANOTHER_STYLE' ? { styleId: body.styleId } : {}),
+      ...(body.kind === 'ANOTHER_STYLE' ? { styleId: body.styleId, pinnedReferenceId: body.pinnedReferenceId } : {}),
       ...(body.kind === 'MORE' ? { fromOptionId: body.fromOptionId, fromBatchId: body.fromBatchId } : {}),
       ...(body.kind === 'SERIES_MATCH' ? { seriesOfRequestId: body.seriesOfRequestId } : {}),
     }).catch(stageToApi);
-    await audit({ action: 'batch.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, metadata: { kind: body.kind, batchId: created.batchId } });
+    await audit({ action: 'batch.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, metadata: { kind: body.kind, batchId: created.batchId, ...(body.kind === 'ANOTHER_STYLE' && body.pinnedReferenceId ? { pinnedReferenceId: body.pinnedReferenceId } : {}) } });
     res.status(202).json({ batchId: created.batchId, seq: created.seq, status: 'QUEUED' });
   })
 );
