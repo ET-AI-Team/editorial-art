@@ -9,7 +9,7 @@ export interface ImageData {
 export type AspectRatio = '1:1';
 
 /** Every structured model answer this service asks for, so fakes can answer each kind. */
-export type ChatKind = 'read' | 'judge' | 'alt_text' | 'describe_reference' | 'screen_exemplar';
+export type ChatKind = 'read' | 'judge' | 'alt_text' | 'describe_reference' | 'screen_exemplar' | 'preview_text';
 
 export interface ChatJsonParams {
   kind: ChatKind;

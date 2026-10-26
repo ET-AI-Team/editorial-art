@@ -169,6 +169,8 @@ function fakeAnswer(p: ChatJsonParams): unknown {
         subjects: ['money', 'symbol'],
         mood: 'calm',
       };
+    case 'preview_text':
+      return { hasText: false, where: '' };
     case 'screen_exemplar':
       return { hasText: false, hasWatermarkOrSignature: false, anatomyOk: true, onStyle: 4, reason: '' };
     default:

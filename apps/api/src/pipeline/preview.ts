@@ -4,7 +4,8 @@ import { cropToAspect, dHash, hammingDistance, isBlank, toWebp } from '../lib/im
 import { db } from '../lib/db';
 import { ESTIMATE_INR } from '../lib/pricing';
 import { BadModelOutput, ProviderRefusal, providers, type ImageData } from '../providers';
-import { generateImage, maybeCrash } from './ai';
+import { PreviewTextCheck } from '@editorial-art/shared-types';
+import { chat, generateImage, maybeCrash } from './ai';
 import { inputImages, loadOptionContext, type OptionContext } from './context';
 import { emitBatchSettled, emitOptionFailed, emitPreviewReady } from './events';
 import { cleanEditorPrompt } from './guard/strip';
@@ -17,6 +18,27 @@ import { batchOutcome, moveBatch, moveOption } from './state';
  */
 
 const NEAR_DUPLICATE = 8;
+
+const NO_TEXT_AGAIN =
+  'IMPORTANT: the previous attempt had writing in it. Leave every surface blank: no words, letters, numbers, labels, currency symbols or signs on any object, building, boat, flag, screen, coin or chart.';
+
+/** One cheap vision call: previews are what editors judge, so writing on them is caught here. */
+async function hasWriting(ctx: OptionContext, webp: Buffer): Promise<PreviewTextCheck> {
+  return chat(
+    { stage: 'preview_check', requestId: ctx.request.id, optionId: ctx.option.id },
+    {
+      kind: 'preview_text',
+      model: env().EA_JUDGE_MODEL,
+      system: 'You check illustrations for writing. Answer only with JSON.',
+      user: 'Does this image contain any readable letters, words, numbers, currency signs or text-like marks anywhere, including on objects, signs, flags, coins or screens? Return only JSON: { "hasText": boolean, "where": string } where "where" names the spot in a few words, or is empty.',
+      images: [{ buffer: webp, mimeType: 'image/webp' }],
+      temperature: 0,
+      maxTokens: 60,
+    },
+    PreviewTextCheck,
+    ESTIMATE_INR.previewTextCheck
+  );
+}
 
 export function previewPromptFor(ctx: OptionContext, refCount: number, likenessPhotoCount: number, series: boolean): string {
   const editor = cleanEditorPrompt(ctx.request.prompt);
@@ -79,12 +101,21 @@ export async function runPreview(optionId: string): Promise<void> {
   const prompt = previewPromptFor(ctx, refCount, likenessPhotoCount, series);
 
   let produced: { webp: Buffer; hash: string; model: string } | undefined;
+  let currentPrompt = prompt;
   for (let pass = 0; pass < 2 && !produced; pass++) {
-    const { image, model } = await generateWithFallback(ctx, prompt, images);
+    const { image, model } = await generateWithFallback(ctx, currentPrompt, images);
     try {
-      produced = { ...(await checkImage(ctx, image)), model };
+      const checked = await checkImage(ctx, image);
+      const writing = await hasWriting(ctx, checked.webp).catch((error: unknown) => {
+        // A failed check must not cost the editor an option; the final judge checks again.
+        if (error instanceof StageError && error.code === 'SPEND_CAP_REACHED') throw error;
+        return { hasText: false, where: '' };
+      });
+      if (writing.hasText) throw new BadModelOutput(`The image had writing in it (${writing.where || 'somewhere'}).`);
+      produced = { ...checked, model };
     } catch (error) {
       if (!(error instanceof BadModelOutput) || pass === 1) throw error;
+      if (/writing/.test(error.message)) currentPrompt = `${prompt}\n\n${NO_TEXT_AGAIN}`;
     }
   }
   maybeCrash('preview');

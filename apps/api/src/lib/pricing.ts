@@ -94,6 +94,7 @@ export function openaiImageCost(model: string, usage: { textInput?: number; imag
 export const ESTIMATE_INR = {
   read: 2,
   text: 0.5,
+  previewTextCheck: 0.2,
   judge: 1.5,
   embed: 0.01,
   previewImage: 8,

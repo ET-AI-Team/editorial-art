@@ -186,6 +186,10 @@ export const ExemplarScreen = z
   .strict();
 export type ExemplarScreen = z.infer<typeof ExemplarScreen>;
 
+/** The cheap check every preview gets: is there any writing on it? */
+export const PreviewTextCheck = z.object({ hasText: z.boolean(), where: z.string().max(120) }).strict();
+export type PreviewTextCheck = z.infer<typeof PreviewTextCheck>;
+
 export function exemplarPasses(s: ExemplarScreen): boolean {
   return !s.hasText && !s.hasWatermarkOrSignature && s.anatomyOk && s.onStyle >= 3;
 }

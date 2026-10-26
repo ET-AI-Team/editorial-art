@@ -51,6 +51,9 @@ DIRECTIONS RULES
   "growth" without a picture behind them.
 - Never put text, letters, numbers, logos, brand marks, charts with labels, or headlines
   in the image. Numbers from the story must be expressed visually, not written.
+- Never let an idea depend on labels: no names or words on boats, buildings, signs, flags,
+  screens, coins or charts, and no currency symbols. Show meaning through shapes, scale,
+  colour and metaphor that work with every surface left blank.
 - Never describe a real news event as a photograph.
 - suggestedStyleSlug must be one slug from the AVAILABLE STYLES list in the user message.
   Prefer styles whose "good for" matches the desk and tone. For HIGH sensitivity, choose only
