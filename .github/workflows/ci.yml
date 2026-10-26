@@ -1,0 +1,318 @@
+# CI/CD for editorial-art (ET Article art).
+#
+# ─────────────────────────────────────────────────────────────────────────
+# DEPLOY ORDER: EDITORIAL-ART FIRST, THEN AI STUDIO.
+#
+# AI Studio is the only caller and validates every response with the Zod
+# schemas copied from packages/shared-types. ADDING a field is backward
+# compatible and safe to ship here first. REMOVING or RENAMING one is not:
+# ship AI Studio's tolerance for it before the change lands here.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run - report what would deploy, change nothing on the box'
+        type: boolean
+        default: true
+
+env:
+  # Pinned, never "latest": CI's job is to predict production. Matches the
+  # bun on the deploy host (/data/abhigyan.raj/.bun/bin/bun, 1.4.0).
+  BUN_VERSION: '1.4.0'
+  DEPLOY_DIR: /data/products/editorial-art
+  SERVICE: editorial-art
+  # /ready, not /health: it also proves Postgres and Redis answer.
+  HEALTH_URL: http://127.0.0.1:7701/ready
+
+jobs:
+  # ───────────────────────── verify ─────────────────────────
+  # Hermetic. No database, no Redis, no provider keys. Everything that
+  # needs a backing service runs in `integration` below, so this job can
+  # never be flaky for environmental reasons.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # tsc reads the generated Prisma types and nothing generates them
+      # implicitly (no postinstall hook). `bun run` uses the installed
+      # workspace binary, so this never hits the network.
+      - name: Generate Prisma client
+        run: bun run --cwd apps/api prisma:generate
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Shared contract tests
+        run: bun run --cwd packages/shared-types test
+
+      # A cheap last line behind GitHub's own push protection: refuse a
+      # change that adds something shaped like a provider key, a GitHub
+      # token or a private key. Only ADDED lines are checked.
+      - name: Scan the change for secrets
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
+          fi
+          HITS="$(git diff "$BASE" HEAD -- . ':(exclude)bun.lock' | grep -E '^\+' | grep -nE 'sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{20,}|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY' || true)"
+          if [ -n "$HITS" ]; then
+            echo "::error::The change adds something that looks like a secret. Remove it and rotate the key."
+            echo "$HITS" | sed -E 's/(sk-|AIza|ghp_)[A-Za-z0-9_-]+/\1***/g'
+            exit 1
+          fi
+          echo "No secret-shaped strings added."
+
+  # ─────────────────────── integration ──────────────────────
+  # The full suite, including the in-process end-to-end tests, against
+  # real Postgres (with pgvector: the schema needs the vector extension)
+  # and Redis. Providers are the deterministic fakes, so nothing spends.
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: editorial_art_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/editorial_art_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/editorial_art_test
+      TEST_REDIS_URL: redis://localhost:6379
+      REDIS_URL: redis://localhost:6379
+      EA_FAKE_PROVIDERS: 'true'
+      EA_INTERNAL_API_KEYS: test-key-one,test-key-two
+      EA_READ_MODEL: gpt-4.1
+      EA_TEXT_MODEL: gpt-4.1
+      EA_JUDGE_MODEL: gpt-4.1
+      EA_EMBED_MODEL: text-embedding-3-small
+      EA_PREVIEW_MODEL: gemini-3.1-flash-image
+      EA_PREVIEW_FALLBACK_MODEL: gemini-3-pro-image
+      EA_FINAL_MODEL: gemini-3-pro-image
+      EA_FINAL_FALLBACK_MODEL: gpt-image-2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run --cwd apps/api prisma:generate
+
+      - name: Apply migrations
+        run: bun run --cwd apps/api prisma:deploy
+
+      - name: Shared contract tests
+        run: bun run --cwd packages/shared-types test
+
+      - name: Full test suite
+        run: bun run --cwd apps/api test
+
+  # ───────────────────────── deploy ─────────────────────────
+  # Runs ON the box, through a self-hosted runner registered to this
+  # repository with the label `editorial-art`. Only a push to main (or a
+  # manual dispatch) deploys; pull requests stop after the two jobs above.
+  deploy:
+    name: Deploy to 10.71.77.228
+    needs: [verify, integration]
+    runs-on: [self-hosted, editorial-art]
+    timeout-minutes: 15
+
+    # Both names: the repository may move from the personal account to the
+    # ET-AI-Team organisation, and a deploy must keep working either side
+    # of the transfer.
+    if: >-
+      (github.repository == 'AbhigyanRaj/editorial-art' || github.repository == 'ET-AI-Team/editorial-art') &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'workflow_dispatch'
+      )
+
+    # One deploy at a time, and never cancelled halfway: a migrate that is
+    # killed mid-run is worse than a deploy that waits its turn.
+    concurrency:
+      group: deploy-editorial-art
+      cancel-in-progress: false
+
+    defaults:
+      run:
+        working-directory: ${{ env.DEPLOY_DIR }}
+
+    steps:
+      - name: Record current commit for rollback
+        id: prev
+        run: |
+          PREV=$(git rev-parse HEAD)
+          echo "sha=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Currently deployed: $PREV"
+
+      # Refuses to deploy over an uncommitted production hand-edit. TRACKED
+      # changes only (-uno): `git reset --hard` leaves untracked files such
+      # as .env alone, so blocking on them would be wrong.
+      - name: Refuse to clobber uncommitted changes
+        run: |
+          if [ -n "$(git status --porcelain -uno)" ]; then
+            echo "::error::Tracked files are modified in $DEPLOY_DIR - refusing to reset --hard over them."
+            git status --porcelain -uno
+            echo "--- diff ---"
+            git --no-pager diff
+            exit 1
+          fi
+          echo "No tracked modifications."
+
+          UNTRACKED="$(git ls-files --others --exclude-standard)"
+          if [ -n "$UNTRACKED" ]; then
+            echo "::notice::Untracked files present (reset --hard will NOT remove these):"
+            echo "$UNTRACKED"
+          fi
+
+      # Read-only: updates remote-tracking refs, never the working tree.
+      - name: Fetch
+        run: git fetch --all --prune
+
+      # The exact commit this run was triggered for, not whatever main has
+      # moved to since: two pushes in a row must deploy in order.
+      - name: Resolve target commit
+        id: target
+        run: |
+          TARGET="${{ github.sha }}"
+          if ! git cat-file -e "$TARGET^{commit}" 2>/dev/null; then
+            TARGET="$(git rev-parse origin/main)"
+          fi
+          echo "sha=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "HEAD:   $(git rev-parse --short HEAD)"
+          echo "Target: $(git rev-parse --short "$TARGET")"
+          echo "--- commits that would land ---"
+          git --no-pager log --oneline "HEAD..$TARGET" || true
+
+      # `exit 0` in a step would NOT stop the steps after it, so the mode is
+      # computed once and every mutating step below is gated on it.
+      # Getting this wrong makes "dry run" deploy for real.
+      - name: Decide whether this run may mutate the box
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry=true" >> "$GITHUB_OUTPUT"
+            echo "DRY RUN - the working tree, node_modules, database and service will be left untouched."
+          else
+            echo "dry=false" >> "$GITHUB_OUTPUT"
+            echo "LIVE DEPLOY - the box will be updated."
+          fi
+
+      # ---- everything below MUTATES the box ----
+
+      - name: Reset to the target commit
+        if: steps.mode.outputs.dry != 'true'
+        run: |
+          git reset --hard "${{ steps.target.outputs.sha }}"
+          echo "Now at: $(git rev-parse HEAD)"
+
+      - name: Install dependencies
+        if: steps.mode.outputs.dry != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        if: steps.mode.outputs.dry != 'true'
+        run: bun run --cwd apps/api prisma:generate
+
+      # Migrations run BEFORE the restart: the new code must never meet a
+      # schema that predates it. Additive-only by policy, so the old code
+      # tolerates the new columns during the seconds between these steps.
+      - name: Apply migrations
+        if: steps.mode.outputs.dry != 'true'
+        run: bun run --cwd apps/api prisma:deploy
+
+      # Allowed by the sudoers drop-in in ops/sudoers-editorial-art, which
+      # permits exactly this command and nothing else.
+      - name: Restart service
+        if: steps.mode.outputs.dry != 'true'
+        run: sudo systemctl restart ${{ env.SERVICE }}
+
+      # Poll, never a single curl: the service takes a few seconds to bind
+      # its port, and a check fired immediately after `systemctl restart`
+      # returns 000 against a service that is perfectly fine.
+      - name: Health check
+        if: steps.mode.outputs.dry != 'true'
+        run: |
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" || echo 000)
+            echo "[$i/30] $HEALTH_URL -> $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "Ready after ~$((i * 2))s."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Service did not report ready within ~60s."
+          exit 1
+
+      # ---- rollback ----
+      #
+      # Restores the previous build and checks it came back. Migrations are
+      # NOT rolled back: they are additive by policy, so the older code
+      # ignores any new columns.
+      - name: Roll back on failure
+        if: failure() && steps.mode.outputs.dry != 'true'
+        run: |
+          echo "::error::Deploy failed - rolling back to ${{ steps.prev.outputs.sha }}"
+          git reset --hard "${{ steps.prev.outputs.sha }}"
+          bun install --frozen-lockfile
+          bun run --cwd apps/api prisma:generate
+          sudo systemctl restart ${{ env.SERVICE }}
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" || echo 000)
+            if [ "$CODE" = "200" ]; then
+              echo "::warning::Rolled back to ${{ steps.prev.outputs.sha }} and it is ready. The box is on the PREVIOUS build."
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::Rolled back to ${{ steps.prev.outputs.sha }} but it did not report ready either. The service needs a person now (docs/RUNBOOK.md)."
+          exit 1
