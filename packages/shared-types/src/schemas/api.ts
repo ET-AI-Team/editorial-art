@@ -84,7 +84,9 @@ export const PackAsset = z.object({
   height: z.number().int(),
   webpUrl: z.string().url(),
   jpgUrl: z.string().url(),
-  bytes: z.object({ webp: z.number().int(), jpg: z.number().int() }),
+  /** The lossless master. Packs made before masters were kept have none. */
+  pngUrl: z.string().url().optional(),
+  bytes: z.object({ webp: z.number().int(), jpg: z.number().int(), png: z.number().int().optional() }),
   method: z.enum(['resize']),
 });
 export type PackAsset = z.infer<typeof PackAsset>;
@@ -354,6 +356,74 @@ export const SpendSummary = z.object({
   buildCapInr: z.number().nullable(),
 });
 export type SpendSummary = z.infer<typeof SpendSummary>;
+
+// ---- image model setting (admin) -----------------------------------------------------------
+
+/** The image models an admin may choose. Each belongs to one provider. */
+export const IMAGE_MODEL_IDS = ['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2'] as const;
+export const ImageModelId = z.enum(IMAGE_MODEL_IDS);
+export type ImageModelId = z.infer<typeof ImageModelId>;
+
+export const ImageProvider = z.enum(['gemini', 'openai']);
+export type ImageProvider = z.infer<typeof ImageProvider>;
+
+export const ImageModelOption = z.object({
+  id: ImageModelId,
+  label: z.string(),
+  provider: ImageProvider,
+  speed: z.enum(['fast', 'standard']),
+  note: z.string(),
+});
+export type ImageModelOption = z.infer<typeof ImageModelOption>;
+
+export const IMAGE_MODEL_OPTIONS: readonly ImageModelOption[] = [
+  { id: 'gemini-3.1-flash-image', label: 'Gemini 3.1 Flash Image', provider: 'gemini', speed: 'fast', note: 'Fast and cheap. The default for previews.' },
+  { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image', provider: 'gemini', speed: 'standard', note: 'Slower, more detailed. The default for finals.' },
+  { id: 'gpt-image-2', label: 'GPT Image 2', provider: 'openai', speed: 'standard', note: 'OpenAI. Slower; a good second opinion on style.' },
+];
+
+/** The provider of a model id: a listed one by the table, any other (a dated id, say) by its name. */
+export function providerOfModel(model: string): ImageProvider {
+  return IMAGE_MODEL_OPTIONS.find((o) => o.id === model)?.provider ?? (model.startsWith('gpt-') ? 'openai' : 'gemini');
+}
+
+/** Output resolution of an image call: 1K is about 1024 px square, 2K about 2048, 4K the largest. */
+export const ImageSize = z.enum(['1K', '2K', '4K']);
+export type ImageSize = z.infer<typeof ImageSize>;
+/** Finals are never smaller than 2K. */
+export const FinalImageSize = z.enum(['2K', '4K']);
+export type FinalImageSize = z.infer<typeof FinalImageSize>;
+
+export const ImageModelSetting = z.object({ previewModel: ImageModelId, finalModel: ImageModelId, finalImageSize: FinalImageSize });
+export type ImageModelSetting = z.infer<typeof ImageModelSetting>;
+
+export const ImageModelSettingResponse = ImageModelSetting.extend({ options: z.array(ImageModelOption) });
+export type ImageModelSettingResponse = z.infer<typeof ImageModelSettingResponse>;
+
+export const PutImageModelSettingBody = z
+  .object({ previewModel: ImageModelId.optional(), finalModel: ImageModelId.optional(), finalImageSize: FinalImageSize.optional() })
+  .strict()
+  .refine((b) => b.previewModel !== undefined || b.finalModel !== undefined || b.finalImageSize !== undefined, 'set previewModel, finalModel or finalImageSize');
+export type PutImageModelSettingBody = z.infer<typeof PutImageModelSettingBody>;
+
+// ---- what was sent to the image model (admin) ----------------------------------------------
+
+export const SentImageRole = z.enum(['preview', 'reference', 'likeness', 'series']);
+export type SentImageRole = z.infer<typeof SentImageRole>;
+/** One attached image: what it is, where it is stored, and the label sent right before it. */
+export const SentImage = z.object({ role: SentImageRole, url: z.string(), label: z.string().optional() });
+export type SentImage = z.infer<typeof SentImage>;
+
+/** One image call as it was sent: the exact prompt and the images in order. */
+export const SentImageCall = z.object({ model: z.string().nullable(), prompt: z.string(), images: z.array(SentImage) });
+export type SentImageCall = z.infer<typeof SentImageCall>;
+
+export const AdminOptionInputs = z.object({
+  optionId: Id,
+  preview: SentImageCall.nullable(),
+  final: SentImageCall.nullable(),
+});
+export type AdminOptionInputs = z.infer<typeof AdminOptionInputs>;
 
 // ---- errors --------------------------------------------------------------------------------
 

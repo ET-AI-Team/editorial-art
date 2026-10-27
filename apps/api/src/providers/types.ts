@@ -40,7 +40,17 @@ export interface ImageGenParams {
   model: string;
   prompt: string;
   images: ImageData[];
+  /**
+   * One short label per image, in order ("Style reference 1 of 3"). Gemini gets each label as a
+   * text part right before its image; OpenAI, which takes images and one prompt, gets them as a
+   * numbered list at the top of the prompt.
+   */
+  labels?: string[];
   aspectRatio: AspectRatio;
+  /** OpenAI only: rendering quality. Previews and finals both ask for high. */
+  quality?: 'low' | 'medium' | 'high';
+  /** Output resolution; 1K when absent (the providers' own default). */
+  imageSize?: '1K' | '2K' | '4K';
   timeoutMs?: number;
 }
 
@@ -66,7 +76,7 @@ export interface Providers {
   openaiImageEdit(params: ImageGenParams): Promise<ImageGenResult>;
   upload(image: ImageData, opts: { folder: string; publicId: string; format: 'webp' | 'png' | 'jpg'; tags?: string[] }): Promise<UploadResult>;
   destroy(publicId: string): Promise<void>;
-  /** Downloads an image this service stored, bounded to `maxWidth` through a delivery transform. */
+  /** Downloads an image this service stored, bounded to `maxWidth` through a delivery transform (0: as stored). */
   fetchImage(url: string, maxWidth?: number): Promise<ImageData>;
 }
 

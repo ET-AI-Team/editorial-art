@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { db } from '../lib/db';
 import { env } from '../lib/env';
 import { StageError } from '../lib/errors';
-import { toJpeg, toWebp } from '../lib/image';
+import { toJpeg, toPng, toWebp } from '../lib/image';
 import { ESTIMATE_INR } from '../lib/pricing';
 import { styleById } from '../library/styles';
 import { BadModelOutput, providers } from '../providers';
@@ -14,11 +14,14 @@ import { moveOption } from './state';
 
 /**
  * Stage 5: the publish pack for a finalized option. ET Articles uses one square image, so this is
- * the final at up to 2048 x 2048 in WebP and JPG (the credit line written into the JPG), plus alt
- * text, a caption and the credit.
+ * the final at the size it was made (2048 at 2K, larger at 4K) as a lossless PNG master and a JPG
+ * at quality 95 (both with the credit line written in as the copyright), and a WebP at quality 95
+ * for the web, plus alt text, a caption and the credit.
  */
 
-const MAX_SIDE = 2048;
+/** Large enough for any final; the master is fetched as stored, without a delivery transform. */
+const MAX_SIDE = 4096;
+const QUALITY = 95;
 
 async function altText(ctx: { requestId: string; optionId: string; altTextSeed: string; idea: string; title: string; styleLabel: string }) {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -47,19 +50,22 @@ export async function runPack(optionId: string): Promise<void> {
   ]);
   if (!brief || !direction || !style) throw new StageError('INVALID_STATE', 'The option is missing its brief, direction or style.', false);
 
-  const master = (await providers().fetchImage(option.finalUrl, MAX_SIDE)).buffer;
+  const master = (await providers().fetchImage(option.finalUrl, 0)).buffer;
   const meta = await sharp(master).metadata();
   const side = Math.min(MAX_SIDE, meta.width ?? MAX_SIDE, meta.height ?? MAX_SIDE);
   const square = await sharp(master).resize(side, side, { fit: 'cover' }).png().toBuffer();
 
   const credit = env().EA_CREDIT_LINE;
-  const [webp, jpg] = await Promise.all([toWebp(square, { quality: 85 }), toJpeg(square, { quality: 88, copyright: credit })]);
+  const [png, webp, jpg] = await Promise.all([toPng(square, { copyright: credit }), toWebp(square, { quality: QUALITY }), toJpeg(square, { quality: QUALITY, copyright: credit })]);
   const folder = `${env().EA_CLOUDINARY_FOLDER}/${option.request.publicId}/pack/${option.id}`;
-  const [w, j] = await Promise.all([
+  const [p, w, j] = await Promise.all([
+    providers().upload({ buffer: png, mimeType: 'image/png' }, { folder, publicId: '1x1-png', format: 'png' }),
     providers().upload({ buffer: webp, mimeType: 'image/webp' }, { folder, publicId: '1x1-webp', format: 'webp' }),
     providers().upload({ buffer: jpg, mimeType: 'image/jpeg' }, { folder, publicId: '1x1-jpg', format: 'jpg' }),
   ]);
-  const assets: PackAsset[] = [{ size: '1x1', width: side, height: side, webpUrl: w.url, jpgUrl: j.url, bytes: { webp: webp.length, jpg: jpg.length }, method: 'resize' }];
+  const assets: PackAsset[] = [
+    { size: '1x1', width: side, height: side, webpUrl: w.url, jpgUrl: j.url, pngUrl: p.url, bytes: { webp: webp.length, jpg: jpg.length, png: png.length }, method: 'resize' },
+  ];
   maybeCrash('pack');
 
   const text = await altText({ requestId: option.requestId, optionId: option.id, altTextSeed: brief.altTextSeed, idea: direction.idea, title: direction.title, styleLabel: style.label });

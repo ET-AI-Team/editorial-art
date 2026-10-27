@@ -71,20 +71,50 @@ export async function embed(model: string, text: string): Promise<{ vector: numb
   }
 }
 
-/** gpt-image-2 edit: the first image is the one to recreate; the rest are style references. */
+/**
+ * /images/edits takes several images and one prompt, so the images are numbered in the prompt
+ * itself, in the order they are attached.
+ */
+export function openaiPrompt(p: Pick<ImageGenParams, 'prompt' | 'images' | 'labels'>): string {
+  const labels = p.images.map((_, i) => p.labels?.[i]).filter((l): l is string => !!l);
+  if (!labels.length || labels.length !== p.images.length) return p.prompt;
+  const list = labels.map((label, i) => `Image ${i + 1}: ${label.replace(/:\s*$/, '')}.`).join('\n');
+  return `The attached images, in order:\n${list}\n\n${p.prompt}`;
+}
+
+/**
+ * Square sizes for gpt-image-2, which takes any WIDTHxHEIGHT with edges in multiples of 16, at
+ * most 3840 per edge and 8,294,400 pixels in all: 2880x2880 is the largest square it allows.
+ */
+export const OPENAI_SQUARE: Record<'1K' | '2K' | '4K', string> = { '1K': '1024x1024', '2K': '2048x2048', '4K': '2880x2880' };
+
+/**
+ * gpt-image-2. With images it goes through /images/edits, the endpoint that accepts them (style
+ * references for a preview; the approved preview plus references for a final); with none, through
+ * /images/generations. Always square. input_fidelity is left out: gpt-image-2 does not allow it.
+ */
 export async function imageEdit(p: ImageGenParams): Promise<ImageGenResult> {
-  const form = new FormData();
-  form.append('model', p.model);
-  form.append('prompt', p.prompt);
-  form.append('size', '1024x1024');
-  form.append('quality', 'high');
-  form.append('n', '1');
-  p.images.forEach((image, i) => {
-    form.append('image[]', new Blob([new Uint8Array(image.buffer)], { type: image.mimeType }), `image-${i}.${image.mimeType.split('/')[1] ?? 'png'}`);
-  });
+  const prompt = openaiPrompt(p);
+  const quality = p.quality ?? 'high';
+  const size = OPENAI_SQUARE[p.imageSize ?? '1K'];
+  let body: FormData | Record<string, unknown>;
+  if (p.images.length) {
+    const form = new FormData();
+    form.append('model', p.model);
+    form.append('prompt', prompt);
+    form.append('size', size);
+    form.append('quality', quality);
+    form.append('n', '1');
+    p.images.forEach((image, i) => {
+      form.append('image[]', new Blob([new Uint8Array(image.buffer)], { type: image.mimeType }), `image-${i}.${image.mimeType.split('/')[1] ?? 'png'}`);
+    });
+    body = form;
+  } else {
+    body = { model: p.model, prompt, size, quality, n: 1 };
+  }
   let data: { data?: { b64_json?: string }[]; usage?: { input_tokens_details?: { text_tokens?: number; image_tokens?: number }; output_tokens?: number } };
   try {
-    const res = await openaiHttp.post('/images/edits', form, { headers: auth(), timeout: p.timeoutMs ?? 180_000 });
+    const res = await openaiHttp.post(p.images.length ? '/images/edits' : '/images/generations', body, { headers: auth(), timeout: p.timeoutMs ?? 180_000 });
     data = res.data;
   } catch (error) {
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;

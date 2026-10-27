@@ -1,11 +1,13 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { AddressInfo } from 'node:net';
 import sharp from 'sharp';
+import { ImageModelSettingResponse } from '@editorial-art/shared-types';
 import { resetDb } from '../../test/db';
 import { createApp } from '../app';
 import { db } from '../lib/db';
 import { closeRedis, redis } from '../lib/redis';
 import { env } from '../lib/env';
+import { resetSettingsCacheForTests } from '../lib/settings';
 import { NEUTRAL_SUBJECTS } from '../library/exemplars';
 import { seedStyles } from '../library/styles';
 import { setProviders } from '../providers';
@@ -256,5 +258,52 @@ describe('spend', () => {
     const res = await call('/admin/spend');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ todayInr: 0, dailyCapInr: null, monthInr: 0 });
+  });
+});
+
+describe('image model setting', () => {
+  beforeEach(() => resetSettingsCacheForTests());
+
+  test('GET shows the env defaults and every model admins can pick', async () => {
+    const res = await call('/admin/settings/image-models');
+    expect(res.status).toBe(200);
+    expect(ImageModelSettingResponse.parse(res.body)).toEqual({
+      previewModel: 'gemini-3.1-flash-image',
+      finalModel: 'gemini-3-pro-image',
+      finalImageSize: '2K',
+      options: [
+        { id: 'gemini-3.1-flash-image', label: 'Gemini 3.1 Flash Image', provider: 'gemini', speed: 'fast', note: expect.any(String) },
+        { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image', provider: 'gemini', speed: 'standard', note: expect.any(String) },
+        { id: 'gpt-image-2', label: 'GPT Image 2', provider: 'openai', speed: 'standard', note: expect.any(String) },
+      ],
+    });
+  });
+
+  test('PUT changes one or both models, persists, and is audited', async () => {
+    const put = await call('/admin/settings/image-models', { method: 'PUT', body: { previewModel: 'gpt-image-2' } });
+    expect(put.status).toBe(200);
+    expect(put.body).toMatchObject({ previewModel: 'gpt-image-2', finalModel: 'gemini-3-pro-image', finalImageSize: '2K' });
+    expect((await call('/admin/settings/image-models', { method: 'PUT', body: { finalImageSize: '4K' } })).body).toMatchObject({ previewModel: 'gpt-image-2', finalImageSize: '4K' });
+    resetSettingsCacheForTests();
+    expect((await call('/admin/settings/image-models')).body).toMatchObject({ previewModel: 'gpt-image-2', finalModel: 'gemini-3-pro-image', finalImageSize: '4K' });
+    const audit = await db.auditEvent.findFirstOrThrow({ where: { action: 'setting.image_models' } });
+    expect(audit.metadata).toMatchObject({ before: { previewModel: 'gemini-3.1-flash-image' }, after: { previewModel: 'gpt-image-2' } });
+  });
+
+  test('PUT refuses an unknown model, an empty body, extra fields and members', async () => {
+    for (const body of [{ previewModel: 'dall-e-3' }, {}, { previewModel: 'gpt-image-2', provider: 'openai' }, { finalModel: 42 }, { finalImageSize: '1K' }, { finalImageSize: '8K' }]) {
+      const res = await call('/admin/settings/image-models', { method: 'PUT', body });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    }
+    expect((await call('/admin/settings/image-models', { method: 'PUT', body: { previewModel: 'gpt-image-2' }, role: 'member' })).status).toBe(403);
+    expect((await call('/admin/settings/image-models', { role: 'member' })).status).toBe(403);
+    expect(await db.setting.count()).toBe(0);
+  });
+
+  test('what an option sent is admin only, and an unknown option is a 404', async () => {
+    const id = '99999999-9999-4999-8999-999999999999';
+    expect((await call(`/admin/options/${id}/inputs`, { role: 'member' })).status).toBe(403);
+    expect((await call(`/admin/options/${id}/inputs`)).status).toBe(404);
   });
 });

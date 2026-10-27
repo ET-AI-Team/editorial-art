@@ -1,20 +1,23 @@
 import { env } from '../lib/env';
 import { StageError } from '../lib/errors';
-import { cropToAspect, dHash, hammingDistance, isBlank, toWebp } from '../lib/image';
+import { checkCopy, cropToAspect, dHash, hammingDistance, isBlank, losslessMaster } from '../lib/image';
 import { db } from '../lib/db';
 import { ESTIMATE_INR } from '../lib/pricing';
 import { BadModelOutput, ProviderRefusal, providers, type ImageData } from '../providers';
-import { PreviewTextCheck } from '@editorial-art/shared-types';
-import { chat, generateImage, maybeCrash } from './ai';
+import { PreviewTextCheck, type SentImageCall } from '@editorial-art/shared-types';
+import { imageModels } from '../lib/settings';
+import { chat, maybeCrash } from './ai';
 import { inputImages, loadOptionContext, type OptionContext } from './context';
 import { emitBatchSettled, emitOptionFailed, emitPreviewReady } from './events';
 import { cleanEditorPrompt } from './guard/strip';
-import { buildPreviewPrompt } from './prompts';
+import { buildPreviewPrompt, imageLabels } from './prompts';
+import { describeCall, routedImage } from './image-routing';
 import { batchOutcome, moveBatch, moveOption } from './state';
 
 /**
- * Stage 3 (Step 6.5): one preview. The primary (fast) model first; on a refusal or failure the
- * fallback model once. Two refusals mean the idea is blocked; anything else is retried by BullMQ.
+ * Stage 3 (Step 6.5): one preview. The model the admin setting chose first; on a refusal or
+ * failure one model from the other provider (image-routing.ts). Two refusals mean the idea is
+ * blocked; anything else is retried by BullMQ.
  */
 
 const NEAR_DUPLICATE = 8;
@@ -55,27 +58,11 @@ export function previewPromptFor(ctx: OptionContext, refCount: number, likenessP
   });
 }
 
-async function generateWithFallback(ctx: OptionContext, prompt: string, images: ImageData[]): Promise<{ image: ImageData; model: string }> {
-  const config = env();
-  const models = [config.EA_PREVIEW_MODEL, config.EA_PREVIEW_FALLBACK_MODEL];
-  let refusals = 0;
-  let lastError: unknown;
-  for (const model of models) {
-    try {
-      const result = await generateImage({ stage: 'preview', requestId: ctx.request.id, optionId: ctx.option.id }, { provider: 'gemini', model, prompt, images, aspectRatio: '1:1' }, ESTIMATE_INR.previewImage);
-      return { image: result.image, model: result.model };
-    } catch (error) {
-      if (error instanceof StageError && error.code === 'SPEND_CAP_REACHED') throw error;
-      if (error instanceof ProviderRefusal) refusals++;
-      lastError = error;
-    }
-  }
-  if (refusals === models.length) throw new ProviderRefusal(models[1]!, "This idea couldn't be illustrated safely. Try More options.");
-  throw lastError;
-}
-
-/** Checks the image is usable and not a near copy of a sibling; returns its processed form. */
-async function checkImage(ctx: OptionContext, image: ImageData): Promise<{ webp: Buffer; hash: string }> {
+/**
+ * Checks the image is usable and not a near copy of a sibling. Returns the lossless master at the
+ * size it was generated (2048 at 2K), and a 1024 copy for the text check.
+ */
+async function checkImage(ctx: OptionContext, image: ImageData): Promise<{ master: { buffer: Buffer; mimeType: string; format: 'png' | 'webp' }; small: Buffer; hash: string }> {
   const cropped = await cropToAspect(image.buffer, 1);
   if (await isBlank(cropped)) throw new BadModelOutput('The image came back blank.');
   const hash = await dHash(cropped);
@@ -83,7 +70,8 @@ async function checkImage(ctx: OptionContext, image: ImageData): Promise<{ webp:
   if (siblings.some((s) => hammingDistance(BigInt(`0x${s.previewHash}`), hash) < NEAR_DUPLICATE)) {
     throw new BadModelOutput('The image is a near copy of another option.');
   }
-  return { webp: await toWebp(cropped, { width: 1024, height: 1024, quality: 80 }), hash: hash.toString(16).padStart(16, '0') };
+  const [master, small] = await Promise.all([losslessMaster(cropped), checkCopy(cropped)]);
+  return { master, small, hash: hash.toString(16).padStart(16, '0') };
 }
 
 export async function runPreview(optionId: string): Promise<void> {
@@ -97,22 +85,28 @@ export async function runPreview(optionId: string): Promise<void> {
   if (!(await moveOption(ctx.option.id, 'GENERATING', { previewAttempts: { increment: 1 } }, ['PENDING', 'GENERATING']))) return;
   await moveBatch(ctx.batch.id, 'RUNNING', {}, ['QUEUED']);
 
-  const { images, refCount, likenessPhotoCount, series } = await inputImages(ctx);
+  const { images, sources, refCount, likenessPhotoCount, series } = await inputImages(ctx);
   const prompt = previewPromptFor(ctx, refCount, likenessPhotoCount, series);
+  const { previewModel } = await imageModels();
 
-  let produced: { webp: Buffer; hash: string; model: string } | undefined;
+  let produced: (Awaited<ReturnType<typeof checkImage>> & { model: string; sent: SentImageCall }) | undefined;
   let currentPrompt = prompt;
   for (let pass = 0; pass < 2 && !produced; pass++) {
-    const { image, model } = await generateWithFallback(ctx, currentPrompt, images);
+    const request = { stage: 'preview' as const, model: previewModel, imageSize: env().EA_PREVIEW_IMAGE_SIZE, prompt: currentPrompt, images, sources, likenessNames: ctx.likenessNames };
+    // Recorded before the call, so a preview that fails still shows what was sent.
+    await db.option.update({ where: { id: ctx.option.id }, data: { previewInput: describeCall(previewModel, currentPrompt, sources, imageLabels(sources.map((s) => s.role), ctx.likenessNames)) } });
+    const call = { stage: 'preview', requestId: ctx.request.id, optionId: ctx.option.id };
+    const { result, model, sent } = await routedImage(call, request);
+    const image = result.image;
     try {
       const checked = await checkImage(ctx, image);
-      const writing = await hasWriting(ctx, checked.webp).catch((error: unknown) => {
+      const writing = await hasWriting(ctx, checked.small).catch((error: unknown) => {
         // A failed check must not cost the editor an option; the final judge checks again.
         if (error instanceof StageError && error.code === 'SPEND_CAP_REACHED') throw error;
         return { hasText: false, where: '' };
       });
       if (writing.hasText) throw new BadModelOutput(`The image had writing in it (${writing.where || 'somewhere'}).`);
-      produced = { ...checked, model };
+      produced = { ...checked, model, sent };
     } catch (error) {
       if (!(error instanceof BadModelOutput) || pass === 1) throw error;
       if (/writing/.test(error.message)) currentPrompt = `${prompt}\n\n${NO_TEXT_AGAIN}`;
@@ -128,10 +122,10 @@ export async function runPreview(optionId: string): Promise<void> {
   }
 
   const upload = await providers().upload(
-    { buffer: produced!.webp, mimeType: 'image/webp' },
-    { folder: `${env().EA_CLOUDINARY_FOLDER}/${ctx.request.publicId}/previews`, publicId: ctx.option.id, format: 'webp', tags: [`request:${ctx.request.publicId}`] }
+    { buffer: produced!.master.buffer, mimeType: produced!.master.mimeType },
+    { folder: `${env().EA_CLOUDINARY_FOLDER}/${ctx.request.publicId}/previews`, publicId: ctx.option.id, format: produced!.master.format, tags: [`request:${ctx.request.publicId}`] }
   );
-  const moved = await moveOption(ctx.option.id, 'PREVIEW_READY', { previewUrl: upload.url, previewPublicId: upload.publicId, previewModel: produced!.model, previewHash: produced!.hash, failureReason: null }, ['GENERATING']);
+  const moved = await moveOption(ctx.option.id, 'PREVIEW_READY', { previewUrl: upload.url, previewPublicId: upload.publicId, previewModel: produced!.model, previewHash: produced!.hash, previewInput: produced!.sent, failureReason: null }, ['GENERATING']);
   if (!moved) return;
   await db.styleReference.updateMany({ where: { id: { in: ctx.option.referenceIds } }, data: { usageCount: { increment: 1 } } });
   emitPreviewReady(ctx.request.publicId, ctx.batch.id, ctx.option.id, upload.url);

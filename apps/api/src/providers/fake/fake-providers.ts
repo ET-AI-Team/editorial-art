@@ -10,6 +10,8 @@ import { BadModelOutput, ProviderRefusal, ProviderTimeout, ProviderUnavailable, 
  *   FAKE_REFUSE           every image model refuses
  *   FAKE_REFUSE_PRIMARY   only the first image model asked refuses (the fallback works)
  *   FAKE_IMAGE_FAIL       the image model errors (HTTP 500)
+ *   FAKE_GEMINI_DOWN      only Gemini image models error (HTTP 503); OpenAI works
+ *   FAKE_OPENAI_DOWN      only OpenAI image models error (HTTP 503); Gemini works
  *   FAKE_TIMEOUT          the call times out
  *   FAKE_JUDGE_FAIL       the final judge finds text in the image
  *   FAKE_BAD_JSON         the read returns JSON in the wrong shape
@@ -26,15 +28,25 @@ export interface FakeOptions {
   latencyMs?: number;
 }
 
-export function createFakeProviders(options: FakeOptions = {}): Providers & { store: Map<string, ImageData>; calls: { kind: string; model: string }[] } {
+export interface FakeCall {
+  kind: string;
+  model: string;
+  labels?: string[];
+  quality?: string;
+  imageSize?: string;
+  imageCount?: number;
+}
+
+export function createFakeProviders(options: FakeOptions = {}): Providers & { store: Map<string, ImageData>; calls: FakeCall[] } {
   const store = new Map<string, ImageData>();
-  const calls: { kind: string; model: string }[] = [];
+  const calls: FakeCall[] = [];
   const refusedOnce = new Set<string>();
   const latency = options.latencyMs ?? 0;
 
   async function image(p: ImageGenParams, provider: string) {
-    calls.push({ kind: `image:${provider}`, model: p.model });
+    calls.push({ kind: `image:${provider}`, model: p.model, labels: p.labels, quality: p.quality, imageSize: p.imageSize, imageCount: p.images.length });
     if (latency) await sleep(latency);
+    if (p.prompt.includes(provider === 'gemini' ? 'FAKE_GEMINI_DOWN' : 'FAKE_OPENAI_DOWN')) throw new ProviderUnavailable(503, `${provider} request failed (HTTP 503)`);
     if (p.prompt.includes('FAKE_TIMEOUT')) throw new ProviderTimeout();
     if (p.prompt.includes('FAKE_IMAGE_FAIL')) throw new ProviderUnavailable(500, `${provider} request failed (HTTP 500)`);
     if (p.prompt.includes('FAKE_REFUSE') && !p.prompt.includes('FAKE_REFUSE_PRIMARY')) throw new ProviderRefusal(p.model, 'The image model declined this request.');

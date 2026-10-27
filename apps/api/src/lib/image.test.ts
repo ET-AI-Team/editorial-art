@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import sharp from 'sharp';
-import { cropToAspect, dHash, hammingDistance, imageInfo, isBlank, placeholderImage, toJpeg } from './image';
+import { checkCopy, cropToAspect, dHash, hammingDistance, imageInfo, isBlank, losslessMaster, placeholderImage, toJpeg, toPng } from './image';
 
 describe('image helpers', () => {
   test('crops to 16:9 when off, leaves it when close', async () => {
@@ -34,5 +34,25 @@ describe('image helpers', () => {
     const meta = await sharp(jpg).metadata();
     expect(meta.format).toBe('jpeg');
     expect(meta.exif?.toString('latin1')).toContain('AI illustration: ET');
+  });
+});
+
+describe('stored masters', () => {
+  test('the master is lossless, and the PNG carries the credit as its copyright', async () => {
+    const source = await placeholderImage(256, 256, 40, 'm');
+    const raw = (b: Buffer) => sharp(b).removeAlpha().raw().toBuffer();
+    const master = await losslessMaster(source);
+    expect(['png', 'webp']).toContain(master.format);
+    expect((await raw(master.buffer)).equals(await raw(source))).toBe(true);
+    const png = await toPng(source, { copyright: 'AI illustration: ET' });
+    expect((await raw(png)).equals(await raw(source))).toBe(true);
+    const exif = (await sharp(png).metadata()).exif;
+    expect(exif?.toString('latin1')).toContain('AI illustration: ET');
+  });
+
+  test('the text check gets a 1024 copy of a 2048 preview', async () => {
+    const big = await placeholderImage(2048, 2048, 200, 'b');
+    const meta = await sharp(await checkCopy(big)).metadata();
+    expect([meta.width, meta.height, meta.format]).toEqual([1024, 1024, 'webp']);
   });
 });

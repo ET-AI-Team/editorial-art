@@ -16,19 +16,31 @@ interface GeminiResponse {
 }
 
 /**
+ * The request parts: the prompt, then each image right after its own text label, so the model
+ * knows which image is a style reference and which is something else.
+ */
+export function geminiParts(p: Pick<ImageGenParams, 'prompt' | 'images' | 'labels'>): unknown[] {
+  const parts: unknown[] = [{ text: p.prompt }];
+  p.images.forEach((image, i) => {
+    const label = p.labels?.[i];
+    if (label) parts.push({ text: label });
+    parts.push({ inlineData: { mimeType: image.mimeType, data: image.buffer.toString('base64') } });
+  });
+  return parts;
+}
+
+/**
  * Image generation with inline reference images. Same request shape as design-pipeline's
- * gemini.client.ts (`generationConfig.imageConfig.aspectRatio`).
+ * gemini.client.ts (`generationConfig.imageConfig.aspectRatio`), plus `imageConfig.imageSize`
+ * ("1K", "2K" or "4K", upper-case K) for the output resolution of the Gemini 3 image models.
  */
 export async function generateImage(p: ImageGenParams): Promise<ImageGenResult> {
-  const parts: unknown[] = [{ text: p.prompt }];
-  for (const image of p.images) {
-    parts.push({ inlineData: { mimeType: image.mimeType, data: image.buffer.toString('base64') } });
-  }
+  const parts = geminiParts(p);
   let data: GeminiResponse;
   try {
     const res = await geminiHttp.post(
       `/models/${p.model}:generateContent`,
-      { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: p.aspectRatio } } },
+      { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: p.aspectRatio, ...(p.imageSize ? { imageSize: p.imageSize } : {}) } } },
       { headers: { 'x-goog-api-key': env().GEMINI_API_KEY ?? '' }, timeout: p.timeoutMs ?? 120_000 }
     );
     data = res.data;

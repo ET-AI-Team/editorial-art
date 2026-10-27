@@ -1,4 +1,4 @@
-import type { BatchPlanEntry } from '@editorial-art/shared-types';
+import type { BatchPlanEntry, SentImage } from '@editorial-art/shared-types';
 import { BatchPlan } from '@editorial-art/shared-types';
 import { db } from '../lib/db';
 import { styleById, type StyleView } from '../library/styles';
@@ -62,25 +62,45 @@ export function fetchCached(url: string, maxWidth = 1024): Promise<ImageData> {
   return image;
 }
 
+/**
+ * Style references are fetched larger than other inputs so grain and texture survive the trip:
+ * at most this wide (library images are stored at most 1,600 wide), never enlarged.
+ */
+export const REFERENCE_MAX_WIDTH = 1280;
+
+export interface InputImages {
+  images: ImageData[];
+  /** Where each image came from, in the same order: what the audit trail records. */
+  sources: SentImage[];
+  refCount: number;
+  likenessPhotoCount: number;
+  series: boolean;
+}
+
 /** Reference images, likeness photos and (for a series) the earlier final, in prompt order. */
-export async function inputImages(ctx: OptionContext): Promise<{ images: ImageData[]; refCount: number; likenessPhotoCount: number; series: boolean }> {
+export async function inputImages(ctx: OptionContext): Promise<InputImages> {
   const refs = await db.styleReference.findMany({ where: { id: { in: ctx.option.referenceIds } }, select: { id: true, url: true } });
   const ordered = ctx.option.referenceIds.map((id) => refs.find((r) => r.id === id)).filter((r): r is { id: string; url: string } => !!r);
-  const refImages = await Promise.all(ordered.map((r) => fetchCached(r.url)));
+  const refImages = await Promise.all(ordered.map((r) => fetchCached(r.url, REFERENCE_MAX_WIDTH)));
 
   const likenesses = ctx.entry.likenessIds.length ? await db.likeness.findMany({ where: { id: { in: ctx.entry.likenessIds }, status: 'ACTIVE' } }) : [];
   const photoUrls = likenesses.flatMap((l) => (l.photos as { url: string }[]).slice(0, 2).map((p) => p.url));
   const photos = await Promise.all(photoUrls.map((u) => fetchCached(u, 768)));
 
-  let seriesImage: ImageData | null = null;
+  let series: { url: string; image: ImageData } | null = null;
   if (ctx.entry.seriesSourceOptionId) {
     const source = await db.option.findUnique({ where: { id: ctx.entry.seriesSourceOptionId }, select: { finalUrl: true } });
-    if (source?.finalUrl) seriesImage = await fetchCached(source.finalUrl, 1024);
+    if (source?.finalUrl) series = { url: source.finalUrl, image: await fetchCached(source.finalUrl, 1024) };
   }
   return {
-    images: [...refImages, ...photos, ...(seriesImage ? [seriesImage] : [])],
+    images: [...refImages, ...photos, ...(series ? [series.image] : [])],
+    sources: [
+      ...ordered.map((r) => ({ role: 'reference' as const, url: r.url })),
+      ...photoUrls.map((url) => ({ role: 'likeness' as const, url })),
+      ...(series ? [{ role: 'series' as const, url: series.url }] : []),
+    ],
     refCount: refImages.length,
     likenessPhotoCount: photos.length,
-    series: !!seriesImage,
+    series: !!series,
   };
 }

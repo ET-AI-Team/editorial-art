@@ -46,13 +46,14 @@ export function boundedUrl(url: string, maxWidth: number): string {
   const m = /^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.*)$/.exec(url);
   if (!m) return url;
   if (/^[a-z]+_[^/,]+(,[a-z]+_[^/,]+)*\//.test(m[2] ?? '')) return url;
-  return `${m[1]}w_${maxWidth},c_limit,q_auto:good/${m[2]}`;
+  return `${m[1]}w_${maxWidth},c_limit,q_auto:best/${m[2]}`;
 }
 
+/** `maxWidth` 0 fetches the file exactly as stored (a lossless master), with no transform. */
 export async function fetchImage(url: string, maxWidth = 1024): Promise<ImageData> {
   if (!/^https:\/\/res\.cloudinary\.com\//.test(url)) throw new Error('Only stored images can be fetched.');
   try {
-    const res = await axios.get<ArrayBuffer>(boundedUrl(url, maxWidth), { responseType: 'arraybuffer', timeout: 30_000, maxContentLength: 20 * 1024 * 1024 });
+    const res = await axios.get<ArrayBuffer>(maxWidth > 0 ? boundedUrl(url, maxWidth) : url, { responseType: 'arraybuffer', timeout: 30_000, maxContentLength: 60 * 1024 * 1024 });
     const mimeType = String(res.headers['content-type'] ?? 'image/png').split(';')[0] ?? 'image/png';
     return { buffer: Buffer.from(res.data), mimeType };
   } catch (error) {

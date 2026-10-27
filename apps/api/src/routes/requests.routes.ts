@@ -32,6 +32,7 @@ import { moveRequest } from '../pipeline/state';
 import { enqueue } from '../queues/queues';
 import { listItem, requestDetail } from './views';
 import { ESTIMATE_INR } from '../lib/pricing';
+import { previewEstimateInr } from '../lib/settings';
 
 export const requestsRouter = Router();
 
@@ -115,7 +116,7 @@ requestsRouter.post(
     if (busy >= config.EA_USER_CONCURRENT_REQUESTS) {
       throw new ApiError('USER_BUSY', 429, 'You already have articles being read. Wait for one to finish.', { retryAfterSec: 15 });
     }
-    await assertCanSpend(ESTIMATE_INR.read + 4 * ESTIMATE_INR.previewImage).catch(stageToApi);
+    await assertCanSpend(ESTIMATE_INR.read + 4 * (await previewEstimateInr())).catch(stageToApi);
 
     const now = new Date();
     const row = await db.request.create({
@@ -223,7 +224,7 @@ requestsRouter.post(
     if (body.kind === 'ANOTHER_STYLE' && body.pinnedReferenceId && body.referenceIds) {
       throw ApiError.validation({ fieldErrors: { referenceIds: ['not with pinnedReferenceId'] } }, 'Send either referenceIds or pinnedReferenceId, not both.');
     }
-    await assertCanSpend(4 * ESTIMATE_INR.previewImage, row.id).catch(stageToApi);
+    await assertCanSpend(4 * (await previewEstimateInr()), row.id).catch(stageToApi);
     const created = await createBatch({
       requestId: row.id,
       kind: body.kind,

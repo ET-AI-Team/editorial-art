@@ -159,9 +159,13 @@ WHERE state IN ('PENDING', 'GENERATING', 'FINALIZING', 'PACKING') AND "updatedAt
 ## 4. Provider down
 
 - `grep provider_error logs/editorial-art.log | tail` shows the stage, model and status.
-- Previews already fall back from `EA_PREVIEW_MODEL` to `EA_PREVIEW_FALLBACK_MODEL`, and finals
-  from Gemini to `EA_FINAL_FALLBACK_MODEL` (gpt-image-2).
-- If one model is out for long, point its variable at the fallback in `.env` and restart.
+- Previews and finals use the models in the admin setting (`GET /admin/settings/image-models`;
+  until an admin sets one, `EA_PREVIEW_MODEL` and `EA_FINAL_MODEL`). When the chosen model fails or
+  refuses, one model from the other provider is tried: Gemini falls back to gpt-image-2, and
+  gpt-image-2 to gemini-3-pro-image.
+- If one provider is out for long, switch the setting to the other provider's model
+  (`PUT /admin/settings/image-models`); it reaches every worker within 30 seconds, no restart.
+- `GET /admin/options/:id/inputs` shows the exact prompt and the ordered images an option sent.
 - If OpenAI is down, reading articles fails; requests fail with a clear message and nothing is spent.
 
 ## 5. Cost spike

@@ -15,7 +15,8 @@ export type AuditAction =
   | 'likeness.create'
   | 'likeness.update'
   | 'likeness.use'
-  | 'spend.cap_reached';
+  | 'spend.cap_reached'
+  | 'setting.image_models';
 
 /** Appends to the audit log. Never throws: a failed audit write is logged, not fatal. */
 export async function audit(entry: {

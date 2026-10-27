@@ -236,6 +236,10 @@ model Option {
   finalPublicId   String?
   finalModel      String?
   judge           Json?
+  /// What the last preview call sent, exactly: SentImageCall { model, prompt, images: [{ role, url }] } (shared-types api.ts). Admin only.
+  previewInput    Json?
+  /// What the last final call sent, in the same shape. Admin only.
+  finalInput      Json?
   /// Cached subject boxes for smart cropping, as ratios.
   subjectBoxes    Json?
   blockedReason   String?
@@ -388,6 +392,14 @@ model Attempt {
 model SpendLedger {
   day       DateTime @id @db.Date
   costInr   Decimal  @default(0) @db.Decimal(12, 4)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+/// Settings admins change at run time, one JSON value per key (for example "image-models").
+model Setting {
+  key       String   @id
+  value     Json
+  updatedBy String?
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }
 

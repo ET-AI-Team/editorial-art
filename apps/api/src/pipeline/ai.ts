@@ -88,7 +88,11 @@ export interface ImageCall {
   model: string;
   prompt: string;
   images: ImageData[];
+  /** One label per image (see ImageGenParams.labels). */
+  labels?: string[];
   aspectRatio: AspectRatio;
+  quality?: 'low' | 'medium' | 'high';
+  imageSize?: '1K' | '2K' | '4K';
   timeoutMs?: number;
 }
 

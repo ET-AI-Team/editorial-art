@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
 import type { RequestDetail } from '@editorial-art/shared-types';
-import { FAMILY_SLUGS, RequestDetail as RequestDetailSchema, StyleReferencesResponse, StylesResponse } from '@editorial-art/shared-types';
+import { AdminOptionInputs, FAMILY_SLUGS, RequestDetail as RequestDetailSchema, StyleReferencesResponse, StylesResponse } from '@editorial-art/shared-types';
 import { invalidateStylesCache } from '../../src/routes/styles.routes';
 import { db } from '../../src/lib/db';
-import { ARTICLE, MEMBER, OTHER_WORKSPACE, artistReferences, call, liveLibrary, startHarness, until, type Harness } from '../harness';
+import { ADMIN, ARTICLE, MEMBER, OTHER_WORKSPACE, artistReferences, call, liveLibrary, startHarness, until, type Harness } from '../harness';
 
 let h: Harness;
 let styleIds: Map<string, string>;
@@ -89,7 +89,8 @@ describe('paste to publish pack, with fake providers', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/zip');
     const files = Object.keys(unzipSync(new Uint8Array(await res.arrayBuffer())));
-    expect(files).toHaveLength(3);
+    expect(files).toHaveLength(4);
+    expect(files.filter((f) => f.endsWith('.png'))).toHaveLength(1);
     expect(files).toContain('README.txt');
   });
 
@@ -132,6 +133,43 @@ describe('paste to publish pack, with fake providers', () => {
     const row = await db.request.findUniqueOrThrow({ where: { publicId: requestId } });
     const sum = await db.attempt.aggregate({ _sum: { costInr: true }, where: { requestId: row.id } });
     expect(Number(sum._sum.costInr)).toBeCloseTo(Number(row.costInr), 3);
+  });
+});
+
+describe('the admin image model switch', () => {
+  afterAll(async () => {
+    await call(h.base, '/admin/settings/image-models', { method: 'PUT', body: { previewModel: 'gemini-3.1-flash-image', finalModel: 'gemini-3-pro-image' }, headers: ADMIN });
+  });
+
+  test('previews and finals use the chosen models, and admins can see exactly what each sent', async () => {
+    const put = await call(h.base, '/admin/settings/image-models', { method: 'PUT', body: { previewModel: 'gpt-image-2', finalModel: 'gemini-3.1-flash-image' }, headers: ADMIN });
+    expect(put.status).toBe(200);
+    const before = h.fake.calls.length;
+    const res = await call(h.base, '/requests', { method: 'POST', body: { articleText: ARTICLE.replace('Monday', 'Friday') } });
+    const d = await settledBatch(res.json.requestId as string, 1);
+    expect(d.batches[0]!.status).toBe('READY');
+    const option = d.batches[0]!.options[0]!;
+    const row = await db.option.findUniqueOrThrow({ where: { id: option.id } });
+    expect(row.previewModel).toBe('gpt-image-2');
+    expect(h.fake.calls.slice(before).filter((c) => c.kind.startsWith('image:')).every((c) => c.kind === 'image:openai' && c.quality === 'high' && c.imageSize === '2K')).toBe(true);
+
+    expect((await call(h.base, `/admin/options/${option.id}/inputs`)).status).toBe(403);
+    const inputs = AdminOptionInputs.parse((await call(h.base, `/admin/options/${option.id}/inputs`, { headers: ADMIN })).json);
+    expect(inputs.preview!.model).toBe('gpt-image-2');
+    expect(inputs.preview!.prompt.startsWith('STYLE REFERENCES:')).toBe(true);
+    expect(inputs.preview!.images.map((i) => i.role)).toEqual(row.referenceIds.map(() => 'reference' as const));
+    expect(inputs.preview!.images[0]!.label).toBe(`Style reference 1 of ${row.referenceIds.length}:`);
+    expect(inputs.final).toBeNull();
+    expect(option).not.toHaveProperty('previewInput');
+
+    expect((await call(h.base, `/options/${option.id}/finalize`, { method: 'POST' })).status).toBe(202);
+    await until(async () => (await call(h.base, `/options/${option.id}`)).json.state === 'PACK_READY');
+    const after = AdminOptionInputs.parse((await call(h.base, `/admin/options/${option.id}/inputs`, { headers: ADMIN })).json);
+    expect(after.final!.model).toBe('gemini-3.1-flash-image');
+    expect(after.final!.prompt.startsWith('The first attached image is the approved preview; keep its composition exactly.')).toBe(true);
+    expect(after.final!.images.map((i) => i.role)).toEqual(['preview' as const, ...row.referenceIds.map(() => 'reference' as const)]);
+    expect(after.final!.images[0]!.url).toBe(row.previewUrl!);
+    expect((await db.option.findUniqueOrThrow({ where: { id: option.id } })).finalModel).toBe('gemini-3.1-flash-image');
   });
 });
 

@@ -4,11 +4,13 @@
  *   bun run purge:expired              apply
  *   bun run purge:expired -- --dry-run report only
  *
- * 1. Requests past expiresAt lose their article text and prompt and become EXPIRED. The hash,
- *    title, brief and images stay for history and reporting.
+ * 1. Requests past expiresAt lose their article text and prompt (and the image prompts recorded
+ *    on their options) and become EXPIRED. The hash, title, brief and images stay for history
+ *    and reporting.
  * 2. Previews nobody finalized, older than EA_PREVIEW_RETENTION_DAYS, are deleted from Cloudinary
  *    (they are never published). Finals and packs are kept: they may be in use on the site.
  */
+import { Prisma } from '@prisma/client';
 import { db } from '../lib/db';
 import { env } from '../lib/env';
 import { logger } from '../lib/logger';
@@ -25,6 +27,8 @@ async function main(): Promise<void> {
     for (let i = 0; i < expiring.length; i += BATCH) {
       const ids = expiring.slice(i, i + BATCH).map((r) => r.id);
       await db.request.updateMany({ where: { id: { in: ids } }, data: { articleText: null, prompt: null } });
+      // The recorded image prompts carry the editor's prompt, so they go too.
+      await db.option.updateMany({ where: { requestId: { in: ids } }, data: { previewInput: Prisma.DbNull, finalInput: Prisma.DbNull } });
       // Only states that can move to EXPIRED; a request still working keeps its status until done.
       await db.request.updateMany({ where: { id: { in: ids }, status: { in: ['ACTIVE', 'HAS_FINAL', 'FAILED', 'CANCELLED'] } }, data: { status: 'EXPIRED' } });
     }

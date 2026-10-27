@@ -46,10 +46,14 @@ const Schema = z
     EA_JUDGE_MODEL: z.string().min(1),
     EA_EMBED_MODEL: z.string().min(1),
     EA_PREVIEW_MODEL: z.string().min(1),
-    EA_PREVIEW_FALLBACK_MODEL: z.string().min(1),
     EA_FINAL_MODEL: z.string().min(1),
-    EA_FINAL_FALLBACK_MODEL: z.string().min(1),
+    /** No longer read (the fallback is one model from the other provider); accepted so old .env files still parse. */
+    EA_PREVIEW_FALLBACK_MODEL: z.string().optional(),
+    EA_FINAL_FALLBACK_MODEL: z.string().optional(),
     EA_ADVICE_MODEL: z.string().min(1).default('gpt-4.1-mini'),
+    /** Output resolution of previews and (until an admin changes it) finals. */
+    EA_PREVIEW_IMAGE_SIZE: z.enum(['1K', '2K', '4K']).default('2K'),
+    EA_FINAL_IMAGE_SIZE: z.enum(['2K', '4K']).default('2K'),
 
     EA_READ_CONCURRENCY: int(6, 1, 64),
     EA_PREVIEW_CONCURRENCY: int(8, 1, 64),

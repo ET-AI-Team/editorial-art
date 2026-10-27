@@ -7,7 +7,14 @@ import { db } from '../lib/db';
 import { ApiError } from '../lib/errors';
 import { isUuid } from '../lib/ids';
 import { referencesByIds } from '../library/references';
-import { ESTIMATE_INR } from '../lib/pricing';
+import { ESTIMATE_INR, imageEstimateInr } from '../lib/pricing';
+import { imageModels } from '../lib/settings';
+
+/** One final by the chosen model and size, plus its judge. */
+async function finalEstimateInr(): Promise<number> {
+  const { finalModel, finalImageSize } = await imageModels();
+  return imageEstimateInr(finalModel, finalImageSize) + ESTIMATE_INR.judge;
+}
 import { assertCanSpend, SpendCapError } from '../lib/spend-guard';
 import { actorOf } from '../middleware/actor';
 import { rateLimit } from '../middleware/rate-limit';
@@ -50,7 +57,7 @@ optionsRouter.post(
       res.status(200).json({ optionId: option.id, state: option.state });
       return;
     }
-    await assertCanSpend(ESTIMATE_INR.finalImage + ESTIMATE_INR.judge, option.requestId).catch((error: unknown) => {
+    await assertCanSpend(await finalEstimateInr(), option.requestId).catch((error: unknown) => {
       if (error instanceof SpendCapError) throw new ApiError(error.code, 429, error.message, { scope: error.scope });
       throw error;
     });
@@ -81,7 +88,7 @@ optionsRouter.get(
   })
 );
 
-/** A ZIP built on the fly: every size as JPG and WebP, plus the alt text, caption and credit. */
+/** A ZIP built on the fly: every size as the PNG master, JPG and WebP, plus the alt text, caption and credit. */
 optionsRouter.get(
   '/options/:optionId/pack.zip',
   asyncRoute(async (req, res) => {
@@ -91,10 +98,13 @@ optionsRouter.get(
     const files: Record<string, Uint8Array> = {};
     let total = 0;
     for (const asset of assets) {
-      for (const [ext, url] of [['jpg', asset.jpgUrl], ['webp', asset.webpUrl]] as const) {
-        const image = await providers().fetchImage(url, 4096);
+      const formats = [['png', asset.pngUrl], ['jpg', asset.jpgUrl], ['webp', asset.webpUrl]] as const;
+      for (const [ext, url] of formats) {
+        if (!url) continue;
+        // As stored: a transform would re-encode the master.
+        const image = await providers().fetchImage(url, 0);
         total += image.buffer.length;
-        if (total > 20 * 1024 * 1024) throw new ApiError('PACK_TOO_LARGE', 413, 'The pack is too large to zip. Download sizes one at a time.');
+        if (total > 80 * 1024 * 1024) throw new ApiError('PACK_TOO_LARGE', 413, 'The pack is too large to zip. Download sizes one at a time.');
         files[`${option.request.publicId}-${asset.size}.${ext}`] = new Uint8Array(image.buffer);
       }
     }

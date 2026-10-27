@@ -1,5 +1,9 @@
 import {
+  AdminOptionInputs,
   AdminReference,
+  ImageModelSettingResponse,
+  PutImageModelSettingBody,
+  SentImageCall,
   AdminStyleRow,
   BulkReviewBody,
   GenerateExemplarsBody,
@@ -21,6 +25,7 @@ import { audit } from '../lib/audit';
 import { db } from '../lib/db';
 import { env } from '../lib/env';
 import { ApiError } from '../lib/errors';
+import { imageModelOptions, imageModels, setImageModels } from '../lib/settings';
 import { spendSummary } from '../lib/spend-guard';
 import { EXEMPLAR_ESTIMATE_INR, NEUTRAL_SUBJECTS, libraryFolder, slugify, toLibraryWebp } from '../library/exemplars';
 import { styleById, toStyleView } from '../library/styles';
@@ -535,5 +540,48 @@ adminRouter.get(
   '/admin/spend',
   asyncRoute(async (_req, res) => {
     res.json(await spendSummary());
+  })
+);
+
+// ---- image models --------------------------------------------------------------------------
+
+async function imageModelResponse() {
+  return ImageModelSettingResponse.parse({ ...(await imageModels()), options: imageModelOptions() });
+}
+
+adminRouter.get(
+  '/admin/settings/image-models',
+  asyncRoute(async (_req, res) => {
+    res.json(await imageModelResponse());
+  })
+);
+
+adminRouter.put(
+  '/admin/settings/image-models',
+  validateBody(PutImageModelSettingBody),
+  asyncRoute(async (req, res) => {
+    const body = req.body as z.infer<typeof PutImageModelSettingBody>;
+    const actor = actorOf(req);
+    const before = await imageModels();
+    const after = await setImageModels(body, actor.userId);
+    await audit({ action: 'setting.image_models', targetType: 'setting', targetId: 'image-models', actorUserId: actor.userId, callerKeyId: req.callerKeyId, metadata: { before, after } });
+    res.json(await imageModelResponse());
+  })
+);
+
+// ---- what an option sent to the image models -----------------------------------------------
+
+/** The exact prompt and the ordered images of an option's last preview and final calls. */
+adminRouter.get(
+  '/admin/options/:id/inputs',
+  asyncRoute(async (req, res) => {
+    const id = idParam(req);
+    const option = await db.option.findUnique({ where: { id }, select: { id: true, previewInput: true, finalInput: true } });
+    if (!option) throw ApiError.notFound('Option not found.');
+    const read = (v: unknown) => {
+      const parsed = SentImageCall.safeParse(v);
+      return parsed.success ? parsed.data : null;
+    };
+    res.json(AdminOptionInputs.parse({ optionId: option.id, preview: read(option.previewInput), final: read(option.finalInput) }));
   })
 );

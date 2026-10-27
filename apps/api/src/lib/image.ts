@@ -66,6 +66,27 @@ export async function toWebp(buffer: Buffer, opts: { width?: number; height?: nu
   return img.webp({ quality: opts.quality ?? 82 }).toBuffer();
 }
 
+/** Lossless PNG, with only the copyright line written in when one is given (as toJpeg does). */
+export async function toPng(buffer: Buffer, opts: { copyright?: string } = {}): Promise<Buffer> {
+  let img = sharp(buffer);
+  if (opts.copyright) img = img.withExifMerge({ IFD0: { Copyright: opts.copyright } });
+  return img.png({ compressionLevel: 9 }).toBuffer();
+}
+
+/**
+ * A lossless master for storage: PNG, or lossless WebP when that is clearly smaller (at least 20%
+ * less). Nothing is lost either way; Cloudinary makes the display sizes from it.
+ */
+export async function losslessMaster(buffer: Buffer): Promise<{ buffer: Buffer; mimeType: string; format: 'png' | 'webp' }> {
+  const [png, webp] = await Promise.all([sharp(buffer).png({ compressionLevel: 9 }).toBuffer(), sharp(buffer).webp({ lossless: true, effort: 4 }).toBuffer()]);
+  return webp.length < png.length * 0.8 ? { buffer: webp, mimeType: 'image/webp', format: 'webp' } : { buffer: png, mimeType: 'image/png', format: 'png' };
+}
+
+/** A smaller copy for a vision check, where full resolution only costs tokens. */
+export async function checkCopy(buffer: Buffer, side = 1024): Promise<Buffer> {
+  return sharp(buffer).resize(side, side, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 90 }).toBuffer();
+}
+
 export async function toJpeg(buffer: Buffer, opts: { width?: number; height?: number; quality?: number; copyright?: string } = {}): Promise<Buffer> {
   let img = sharp(buffer).flatten({ background: '#ffffff' });
   if (opts.width || opts.height) img = img.resize(opts.width, opts.height, { fit: 'cover' });

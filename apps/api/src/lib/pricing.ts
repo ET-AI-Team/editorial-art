@@ -1,3 +1,5 @@
+import { providerOfModel, type ImageSize } from '@editorial-art/shared-types';
+
 /**
  * What each model call costs, from the tokens it actually used. Rates are USD per million tokens,
  * from the providers' published pricing, converted at a fixed rate. Same table and method as
@@ -99,7 +101,33 @@ export const ESTIMATE_INR = {
   previewTextCheck: 0.2,
   judge: 1.5,
   embed: 0.01,
+  /** A 1K flash image, as library exemplars are made. Pipeline images use imageEstimateInr. */
   previewImage: 8,
-  finalImage: 15,
-  openaiFinal: 18,
 } as const;
+
+/**
+ * Output tokens of one square image by size. Gemini's are published (gemini-3-pro-image bills 1K
+ * and 2K alike). gpt-image-2 at high quality: 1K is $0.211 of output (published), 2K (2048) used
+ * 14,272 tokens when measured on 27 October 2026, and 4K (2880) is taken to scale with the pixels.
+ */
+export const IMAGE_OUTPUT_TOKENS: Record<'flash' | 'pro' | 'gpt', Record<ImageSize, number>> = {
+  flash: { '1K': 1_120, '2K': 1_680, '4K': 2_520 },
+  pro: { '1K': 1_120, '2K': 1_120, '4K': 2_000 },
+  gpt: { '1K': 7_040, '2K': 14_300, '4K': 28_300 },
+};
+
+/** Inputs of a typical call: the prompt plus up to four images (references, or preview and references). */
+const TYPICAL_INPUT = { gemini: 6_000, openaiText: 900, openaiImage: 6_000 };
+const MARGIN = 1.25;
+
+/** The spend-guard estimate for one image call by whichever model and size the setting chose. */
+export function imageEstimateInr(model: string, size: ImageSize = '1K'): number {
+  let cost: number;
+  if (providerOfModel(model) === 'openai') {
+    cost = openaiImageCost(model, { textInput: TYPICAL_INPUT.openaiText, imageInput: TYPICAL_INPUT.openaiImage, output: IMAGE_OUTPUT_TOKENS.gpt[size] });
+  } else {
+    const kind = model.startsWith('gemini-3-pro') ? 'pro' : 'flash';
+    cost = geminiImageCost(model, { input: TYPICAL_INPUT.gemini, imageOutput: IMAGE_OUTPUT_TOKENS[kind][size] });
+  }
+  return Math.ceil(cost * MARGIN);
+}
