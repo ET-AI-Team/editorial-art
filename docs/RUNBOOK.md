@@ -211,49 +211,68 @@ Provider keys: rotate in the provider's console, then update `.env` and restart.
 
 ## 9. Artist library
 
-The style references are real artists' published images: 48 styles, about 20 images per style from
-three or four artists each, every image stored with its artist and the page it came from. They are
-loaded by script, approved without admin review, and the AI-generated exemplars are retired.
+The style references are real artists' published images: 33 styles in 9 families, about 20 images
+per style from at least four artists, every image stored with its artist and the page it came from.
+A person picks every reference by hand; the scripts collect and screen candidates, and the import
+loads only what was picked.
 
-Steps 1 to 3 run on a developer machine with `apps/api/.env` pointing at the local dev database
-(the screen step records its spend there) and at the Cloudinary account the box uses. Step 4 runs
-on the box. `<research>` is the folder of research JSON files (one per family) and `<out>` a working
-folder outside the repo.
+Steps 1 to 4 run on a developer machine with `apps/api/.env` pointing at the local dev database
+(the screen step records its spend there) and at the Cloudinary account the box uses. Steps 0 and 5
+run on the box. `<research>` is the folder of research JSON files (one per family) and `<out>` a
+working folder outside the repo.
 
-1. **Collect** (no model calls): reads each style's top four artists' portfolio and project pages,
-   politely (one request per second per host, robots.txt honoured, 403 or 429 skips the host), and
-   saves re-encoded WebP files with `collect-manifest.json`. Safe to re-run; it resumes.
+0. **Fresh start** (once, when a new library replaces the old one): seed the new styles, then
+   retire every approved or candidate reference, clear every cover, move LIVE and CURATING styles
+   back to DRAFT and retire styles no longer in STYLE_LIBRARY.md. Nothing is deleted (rows and
+   Cloudinary images stay) and requests are not touched. It is a dry run unless `--apply` is
+   passed. The gallery shows the change within 60 seconds (its cache), or at once after a restart.
    ```bash
-   bun run library:collect -- --in <research> --out <out>
+   bun run seed:styles
+   bun run library:fresh-start             # counts only
+   bun run library:fresh-start -- --apply  # does it
+   ```
+1. **Collect** (no model calls): reads the portfolio and project pages of each style's top
+   artists (ranks 1 to `--artists`, default 4, at most 10), politely (one request per second per
+   host, robots.txt honoured, 403 or 429 skips the host), and saves re-encoded WebP files with
+   `collect-manifest.json`. Safe to re-run; it resumes.
+   ```bash
+   bun run library:collect -- --in <research> --out <out> --artists 6
    ```
 2. **Screen** (one gpt-4.1 call per image, plus a description and embedding for each keeper):
    keeps images that score 7 or more out of 10 on style with no text, logo, watermark, signature,
-   real person (photographed or drawn), licensed character or brand, explicit content or AI look; the best 8 per artist, at most 24 per style.
-   Writes `library-manifest.json`. Stops before `--max-inr` (default 3000); answers are cached, so a
-   re-run only pays for new images.
+   real person (photographed or drawn), licensed character or brand, explicit content or AI look;
+   the best `--max-per-artist` per artist (default 8), at most `--max-per-style` per style (default
+   24). Raise both to leave more candidates to pick from. Writes `library-manifest.json`. Stops
+   before `--max-inr` (default 3000); answers are cached, so a re-run only pays for new images.
    ```bash
-   bun run library:screen -- --dir <out> --research <research> --max-inr 3000
+   bun run library:screen -- --dir <out> --research <research> --max-inr 3000 --max-per-artist 15 --max-per-style 60
    ```
-   Look through `<out>/<family>/<style>/` and delete any manifest entry that should not ship before
-   uploading.
-3. **Upload** to `<EA_CLOUDINARY_FOLDER>/library/<family>/<style>/<artist>/<n>`; writes the Cloudinary
+3. **Pick**: look through `<out>/<family>/<style>/<artist>/` and write `picks.json`, naming each
+   image by its path relative to `<out>` (the `file` of its manifest entry; the path without the
+   family folder also works). `covers` are up to three of the kept images, in gallery order.
+   ```json
+   { "grain-metaphor": { "keep": ["conceptual-flat/grain-metaphor/some-artist/1.webp"], "covers": ["conceptual-flat/grain-metaphor/some-artist/1.webp"] } }
+   ```
+4. **Upload** to `<EA_CLOUDINARY_FOLDER>/library/<family>/<style>/<artist>/<n>`; writes the Cloudinary
    URLs back into the manifest. Idempotent. Run it with `EA_CLOUDINARY_FOLDER=editorial-art` (the
    box's folder), and import within 7 days: an uploaded image no reference row points to counts as
-   an orphan for the weekly sweep after that.
+   an orphan for the weekly sweep after that. Upload uploads every manifest entry, picked or not;
+   images that are not picked are never imported and so also count as orphans after 7 days.
    ```bash
    EA_CLOUDINARY_FOLDER=editorial-art bun run library:upload -- --dir <out>
    ```
-4. **Import** on the box: copy `<out>/library-manifest.json` to the box (it holds URLs, text and
-   embeddings, no image files), seed the 48 styles, then import. Every artwork becomes an APPROVED
-   reference and covers are set to three artists' best. A style with at least 15 artist
-   references then has its GENERATED references retired and goes LIVE; a style below 15 is listed
-   and left as it was. Only styles in the manifest are touched, so the library can go live one
-   family at a time: import each family's manifest as it is ready.
+5. **Import** on the box: copy `<out>/library-manifest.json` and `picks.json` to the box (they hold
+   URLs, text and embeddings, no image files), then import. Only the styles in `picks.json` are
+   touched, and of each only the kept images, which become APPROVED artist references (a kept
+   image retired by the fresh start is approved again). Covers are the picked covers, in order. A
+   style with at least 15 approved artist references goes LIVE; one below 15 is listed and left as
+   it was. A warning names any style whose references come from fewer than four artists. A typo
+   in `picks.json` stops the run before anything is written.
    ```bash
-   bun run seed:styles
-   bun run library:import -- --dir <folder holding library-manifest.json>
+   bun run library:import -- --dir <folder holding library-manifest.json> --picks <picks.json>
    ```
-   Re-running skips what is already there. `--style <slug>` limits any of the four steps to one style.
+   Re-running skips what is already there. `--style <slug>` limits any step to one style. Without
+   `--picks`, the import approves everything in the manifest, as before.
 
 **Deleting the generated exemplars.** After the import has been checked in the gallery, the retired
 GENERATED rows and their Cloudinary images can be deleted. It is a dry run unless `--apply` is

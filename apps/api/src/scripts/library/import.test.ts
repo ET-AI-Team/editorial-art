@@ -6,7 +6,7 @@ import { setProviders } from '../../providers';
 import { createFakeProviders, fakeVector } from '../../providers/fake/fake-providers';
 import type { LibraryEntry } from './common';
 import { deleteGenerated } from './delete-generated';
-import { importLibrary, pickCovers } from './import';
+import { applyPicks, entryId, importLibrary, pickCovers, type Picks } from './import';
 
 const destroyed: string[] = [];
 
@@ -129,5 +129,87 @@ describe('deleting retired generated references', () => {
     expect(await db.styleReference.count({ where: { source: 'GENERATED' } })).toBe(2);
     expect(await db.styleReference.count({ where: { source: 'ARTIST' } })).toBe(24);
     expect(destroyed.sort()).toEqual(['gen/0', 'gen/1', 'gen/2', 'gen/3']);
+  });
+});
+
+describe('importing hand-picked references', () => {
+  const grain = entries('grain-metaphor', 5, 5);
+  const wit = entries('minimal-wit', 2, 8);
+  const gond = entries('gond', 1, 6);
+  const field = entries('colour-field', 4, 4);
+  const manifest = [...grain, ...wit, ...gond, ...field];
+  // Four of each of the first four artists: 16 kept, the fifth artist left out.
+  const keptGrain = grain.filter((e) => !e.artist.slug.endsWith('-4') && Number(e.file.match(/(\d+)\.webp$/)![1]) <= 4);
+  const id = (e: LibraryEntry) => entryId(e);
+  const picks: Picks = {
+    'grain-metaphor': { keep: keptGrain.map(id), covers: [id(keptGrain[13]!), id(keptGrain[0]!), id(keptGrain[6]!).split('/').slice(1).join('/')] },
+    'minimal-wit': { keep: wit.slice(0, 15).map(id), covers: [] },
+    gond: { keep: gond.slice(0, 5).map(id), covers: [] },
+  };
+
+  test('the id of an entry is its file path; the path without the family folder works too', () => {
+    expect(id(grain[0]!)).toBe('drawing-sketch/grain-metaphor/grain-metaphor-artist-0/1.webp');
+    const picked = applyPicks(manifest, { 'grain-metaphor': { keep: ['grain-metaphor/grain-metaphor-artist-1/2.webp', id(grain[0]!)], covers: [] } });
+    expect(picked.get('grain-metaphor')!.entries.map(id)).toEqual(['drawing-sketch/grain-metaphor/grain-metaphor-artist-1/2.webp', id(grain[0]!)]);
+  });
+
+  test('every problem in picks.json is reported before anything is written', async () => {
+    const before = await db.styleReference.count();
+    const bad: Picks = {
+      'grain-metaphor': { keep: [id(grain[0]!), 'grain-metaphor/nobody/1.webp'], covers: [id(grain[1]!)] },
+      'no-such-style': { keep: ['x.webp'], covers: [] },
+      gond: { keep: ['gond/gond-artist-0/1.webp'], covers: [] },
+    };
+    const notUploaded = manifest.map((e) => (e.style === 'gond' ? { ...e, cloudinaryUrl: undefined, publicId: undefined } : e));
+    let message = '';
+    try {
+      await importLibrary(notUploaded, { picks: bad });
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toContain('4 problem(s)');
+    expect(message).toContain('no entry matches grain-metaphor/nobody/1.webp');
+    expect(message).toContain(`cover ${id(grain[1]!)} is not in keep`);
+    expect(message).toContain('no-such-style: no entries');
+    expect(message).toContain('not uploaded yet');
+    expect(await db.styleReference.count()).toBe(before);
+  });
+
+  test('only kept entries are imported, covers follow the picks in order, and a style with 15 goes LIVE', async () => {
+    const result = await importLibrary(manifest, { picks });
+    expect(result.styles.map((r) => r.style).sort()).toEqual(['gond', 'grain-metaphor', 'minimal-wit']);
+
+    const style = await db.style.findUniqueOrThrow({ where: { slug: 'grain-metaphor' } });
+    expect(style.status).toBe('LIVE');
+    const refs = await db.styleReference.findMany({ where: { styleId: style.id } });
+    expect(refs).toHaveLength(16);
+    expect(new Set(refs.map((r) => r.publicId))).toEqual(new Set(keptGrain.map((e) => e.publicId!)));
+    const byPublicId = new Map(refs.map((r) => [r.publicId, r.id]));
+    expect(style.coverReferenceIds).toEqual([keptGrain[13]!, keptGrain[0]!, keptGrain[6]!].map((e) => byPublicId.get(e.publicId!)!));
+
+    // 15 from two artists is enough to go LIVE, with a warning.
+    expect((await db.style.findUniqueOrThrow({ where: { slug: 'minimal-wit' } })).status).toBe('LIVE');
+    expect(result.fewArtists).toEqual([
+      { slug: 'minimal-wit', artists: 2 },
+      { slug: 'gond', artists: 1 },
+    ]);
+    expect(result.below).toEqual([{ slug: 'gond', approved: 5, min: 15 }]);
+    expect((await db.style.findUniqueOrThrow({ where: { slug: 'gond' } })).status).toBe('DRAFT');
+    // A style in the manifest but not in the picks is not imported.
+    const colourField = await db.style.findUniqueOrThrow({ where: { slug: 'colour-field' } });
+    expect(await db.styleReference.count({ where: { styleId: colourField.id } })).toBe(0);
+  });
+
+  test('a kept image that was retired is approved again rather than added twice', async () => {
+    const style = await db.style.findUniqueOrThrow({ where: { slug: 'grain-metaphor' } });
+    await db.styleReference.updateMany({ where: { styleId: style.id }, data: { status: 'RETIRED' } });
+    await db.style.update({ where: { id: style.id }, data: { status: 'DRAFT', coverReferenceIds: [] } });
+    const result = await importLibrary(manifest, { picks: { 'grain-metaphor': picks['grain-metaphor']! } });
+    expect(result.styles[0]).toMatchObject({ inserted: 0, reapproved: 16, approved: 16 });
+    expect(await db.styleReference.count({ where: { styleId: style.id } })).toBe(16);
+    const after = await db.style.findUniqueOrThrow({ where: { id: style.id } });
+    expect(after.status).toBe('LIVE');
+    expect(after.coverReferenceIds).toHaveLength(3);
+    expect(result.fewArtists).toEqual([]);
   });
 });
