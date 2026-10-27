@@ -130,6 +130,8 @@ model Request {
   styleId           String?
   /// An approved reference of `styleId` the editor chose; every option of the first batch uses it.
   pinnedReferenceId String?
+  /// Approved references of `styleId` the editor chose, in order; every option of the first batch is made from exactly these.
+  referenceIds      String[]      @default([])
   seriesOfRequestId String?
   sensitivity       Sensitivity?
   costInr           Decimal       @default(0) @db.Decimal(12, 4)

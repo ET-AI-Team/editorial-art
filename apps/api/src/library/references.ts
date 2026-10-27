@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { OptionReference } from '@editorial-art/shared-types';
 import { db } from '../lib/db';
 
 /**
@@ -136,4 +137,18 @@ export function chooseReferences(candidates: RefCandidate[], usedInRequest: Map<
 
 export async function storeEmbedding(referenceId: string, vector: number[], model: string): Promise<void> {
   await db.$executeRaw`UPDATE "StyleReference" SET embedding = ${vectorLiteral(vector)}::vector, "embeddingModel" = ${model} WHERE id = ${referenceId}`;
+}
+
+/**
+ * The references behind a set of options, with their artist, in one query. Each option then
+ * lists its own in the order they were sent (see optionDto).
+ */
+export async function referencesByIds(ids: Iterable<string>): Promise<Map<string, OptionReference>> {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return new Map();
+  const rows = await db.styleReference.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, url: true, artist: { select: { name: true, portfolioUrl: true } } },
+  });
+  return new Map(rows.map((r) => [r.id, { id: r.id, url: r.url, artist: r.artist ? { name: r.artist.name, url: r.artist.portfolioUrl } : null }]));
 }

@@ -6,6 +6,7 @@ import { audit } from '../lib/audit';
 import { db } from '../lib/db';
 import { ApiError } from '../lib/errors';
 import { isUuid } from '../lib/ids';
+import { referencesByIds } from '../library/references';
 import { ESTIMATE_INR } from '../lib/pricing';
 import { assertCanSpend, SpendCapError } from '../lib/spend-guard';
 import { actorOf } from '../middleware/actor';
@@ -34,8 +35,8 @@ optionsRouter.get(
   '/options/:optionId',
   asyncRoute(async (req, res) => {
     const option = await findOwnedOption(req);
-    const styles = await db.style.findMany({ where: { id: option.styleId } });
-    res.json(optionDto(option, new Map(styles.map((s) => [s.id, s]))));
+    const [styles, refs] = await Promise.all([db.style.findMany({ where: { id: option.styleId } }), referencesByIds(option.referenceIds)]);
+    res.json(optionDto(option, new Map(styles.map((s) => [s.id, s])), refs));
   })
 );
 

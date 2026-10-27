@@ -12,6 +12,20 @@ export const TITLE_MAX_CHARS = 300;
 export const StyleRef = z.object({ id: Id, slug: z.string(), label: z.string() });
 export type StyleRef = z.infer<typeof StyleRef>;
 
+/** At most this many references go with each image. */
+export const MAX_CHOSEN_REFERENCES = 3;
+
+/**
+ * References the editor chose for a batch: 1 to 3 distinct approved references of the batch's
+ * style, sent with every option in this order instead of the automatic pick.
+ */
+export const ChosenReferenceIds = z
+  .array(Id)
+  .min(1, 'choose at least one reference')
+  .max(MAX_CHOSEN_REFERENCES, `choose at most ${MAX_CHOSEN_REFERENCES} references`)
+  .refine((ids) => new Set(ids).size === ids.length, 'each reference may be chosen once');
+export type ChosenReferenceIds = z.infer<typeof ChosenReferenceIds>;
+
 // ---- requests ------------------------------------------------------------------------------
 
 export const CreateRequestBody = z
@@ -22,6 +36,8 @@ export const CreateRequestBody = z
     styleId: Id.optional().nullable(),
     /** An approved reference of `styleId`: every option of the first batch is made from it. */
     pinnedReferenceId: Id.optional().nullable(),
+    /** Approved references of `styleId` sent with every option, in order. Not with `pinnedReferenceId`. */
+    referenceIds: ChosenReferenceIds.optional().nullable(),
     seriesOfRequestId: PublicRequestId.optional().nullable(),
     clientRef: z
       .string()
@@ -84,6 +100,15 @@ export const PackDto = z.object({
 });
 export type PackDto = z.infer<typeof PackDto>;
 
+/** A reference image sent to the image model with an option. */
+export const OptionReference = z.object({
+  id: Id,
+  url: z.string().url(),
+  /** Null for references without an artist. */
+  artist: z.object({ name: z.string(), url: z.string().url() }).nullable(),
+});
+export type OptionReference = z.infer<typeof OptionReference>;
+
 export const OptionDto = z.object({
   id: Id,
   batchId: Id,
@@ -97,6 +122,8 @@ export const OptionDto = z.object({
   blockedReason: z.string().nullable(),
   failureReason: z.string().nullable(),
   pack: PackDto.nullable(),
+  /** The references sent to the image model, in the order they were sent. */
+  references: z.array(OptionReference),
 });
 export type OptionDto = z.infer<typeof OptionDto>;
 
@@ -181,7 +208,7 @@ export const ArticleTextResponse = z.object({ title: z.string().nullable(), text
 
 export const CreateBatchBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('MORE'), fromOptionId: Id.optional(), fromBatchId: Id.optional() }).strict(),
-  z.object({ kind: z.literal('ANOTHER_STYLE'), styleId: Id, pinnedReferenceId: Id.optional() }).strict(),
+  z.object({ kind: z.literal('ANOTHER_STYLE'), styleId: Id, pinnedReferenceId: Id.optional(), referenceIds: ChosenReferenceIds.optional() }).strict(),
   z.object({ kind: z.literal('SERIES_MATCH'), seriesOfRequestId: PublicRequestId }).strict(),
 ]);
 export type CreateBatchBody = z.infer<typeof CreateBatchBody>;

@@ -23,6 +23,8 @@ export const BatchPlan = z
     promptDropped: z.boolean().default(false),
     /** The reference every option of this batch was made with, when the editor pinned one. */
     pinnedReferenceId: Id.nullable().default(null),
+    /** The references every option of this batch was made with, when the editor chose them. */
+    chosenReferenceIds: z.array(Id).max(3).nullable().default(null),
   })
   .strict();
 export type BatchPlan = z.infer<typeof BatchPlan>;

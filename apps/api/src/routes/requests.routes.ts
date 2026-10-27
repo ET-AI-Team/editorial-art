@@ -20,12 +20,13 @@ import { sha256 } from '../lib/hash';
 import { isPublicRequestId, newPublicRequestId } from '../lib/ids';
 import { assertCanSpend } from '../lib/spend-guard';
 import { detectLang, excerpt, normaliseArticle } from '../lib/text';
+import { referencesByIds } from '../library/references';
 import { liveStyles, styleAllowed } from '../library/styles';
 import { actorOf } from '../middleware/actor';
 import { hitLimit, rateLimit } from '../middleware/rate-limit';
 import { parseQuery, validateBody } from '../middleware/validate';
 import { advisePhoto, SAFE_ADVICE } from '../pipeline/advice';
-import { createBatch, validatePin } from '../pipeline/batches';
+import { createBatch, validatePin, validateReferenceChoice } from '../pipeline/batches';
 import { emitRequestStatus } from '../pipeline/events';
 import { moveRequest } from '../pipeline/state';
 import { enqueue } from '../queues/queues';
@@ -48,10 +49,10 @@ async function loadDetail(id: string) {
     where: { id },
     include: { briefs: { include: { directions: true } }, batches: { include: { options: { include: { pack: true } } } } },
   });
-  const styles = await db.style.findMany();
+  const [styles, refs] = await Promise.all([db.style.findMany(), referencesByIds(r.batches.flatMap((b) => b.options.flatMap((o) => o.referenceIds)))]);
   const level = (r.sensitivity ?? 'NONE') as SensitivityLevel;
   const allowed = (await liveStyles()).filter((s) => styleAllowed(s, level)).map((s) => s.id);
-  return requestDetail(r, new Map(styles.map((s) => [s.id, s])), allowed);
+  return requestDetail(r, new Map(styles.map((s) => [s.id, s])), allowed, refs);
 }
 
 function stageToApi(error: unknown): never {
@@ -90,6 +91,15 @@ requestsRouter.post(
       const style = await db.style.findUnique({ where: { id: body.styleId } });
       if (!style || style.status !== 'LIVE') throw new ApiError('STYLE_NOT_LIVE', 400, 'That style is not available.');
     }
+    if (body.pinnedReferenceId && body.referenceIds) {
+      throw ApiError.validation({ fieldErrors: { referenceIds: ['not with pinnedReferenceId'] } }, 'Send either referenceIds or pinnedReferenceId, not both.');
+    }
+    if (body.referenceIds) {
+      if (!body.styleId) {
+        throw ApiError.validation({ fieldErrors: { referenceIds: ['needs styleId'] } }, 'Chosen references need their style: send styleId as well.');
+      }
+      await validateReferenceChoice(body.referenceIds, body.styleId).catch(stageToApi);
+    }
     if (body.pinnedReferenceId) {
       if (!body.styleId) {
         throw ApiError.validation({ fieldErrors: { pinnedReferenceId: ['needs styleId'] } }, 'A pinned reference needs its style: send styleId as well.');
@@ -124,13 +134,14 @@ requestsRouter.post(
         prompt: body.prompt?.trim() || null,
         styleId: body.styleId ?? null,
         pinnedReferenceId: body.pinnedReferenceId ?? null,
+        referenceIds: body.referenceIds ?? [],
         seriesOfRequestId: body.seriesOfRequestId ?? null,
         spendCapInr: config.EA_REQUEST_SPEND_CAP_INR,
         expiresAt: new Date(now.getTime() + config.EA_ARTICLE_RETENTION_DAYS * 86_400_000),
       },
     });
     await enqueue.read({ requestId: row.id });
-    await audit({ action: 'request.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, callerKeyId: req.callerKeyId, metadata: { chars: row.articleChars, removedLines: article.removedLines, styleId: row.styleId, pinnedReferenceId: row.pinnedReferenceId } });
+    await audit({ action: 'request.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, callerKeyId: req.callerKeyId, metadata: { chars: row.articleChars, removedLines: article.removedLines, styleId: row.styleId, pinnedReferenceId: row.pinnedReferenceId, ...(row.referenceIds.length ? { referenceIds: row.referenceIds } : {}) } });
     req.log?.info({ eaRequestId: row.publicId, chars: row.articleChars }, 'request_created');
     res.status(202).json({ requestId: row.publicId, status: row.status, createdAt: row.createdAt.toISOString() });
   })
@@ -209,16 +220,25 @@ requestsRouter.post(
     const row = await findOwned(req, req.params.requestId);
     const body = req.body as CreateBatchBodyT;
     const actor = actorOf(req);
+    if (body.kind === 'ANOTHER_STYLE' && body.pinnedReferenceId && body.referenceIds) {
+      throw ApiError.validation({ fieldErrors: { referenceIds: ['not with pinnedReferenceId'] } }, 'Send either referenceIds or pinnedReferenceId, not both.');
+    }
     await assertCanSpend(4 * ESTIMATE_INR.previewImage, row.id).catch(stageToApi);
     const created = await createBatch({
       requestId: row.id,
       kind: body.kind,
       requestedBy: actor.userId,
-      ...(body.kind === 'ANOTHER_STYLE' ? { styleId: body.styleId, pinnedReferenceId: body.pinnedReferenceId } : {}),
+      ...(body.kind === 'ANOTHER_STYLE' ? { styleId: body.styleId, pinnedReferenceId: body.pinnedReferenceId, referenceIds: body.referenceIds } : {}),
       ...(body.kind === 'MORE' ? { fromOptionId: body.fromOptionId, fromBatchId: body.fromBatchId } : {}),
       ...(body.kind === 'SERIES_MATCH' ? { seriesOfRequestId: body.seriesOfRequestId } : {}),
     }).catch(stageToApi);
-    await audit({ action: 'batch.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, metadata: { kind: body.kind, batchId: created.batchId, ...(body.kind === 'ANOTHER_STYLE' && body.pinnedReferenceId ? { pinnedReferenceId: body.pinnedReferenceId } : {}) } });
+    await audit({ action: 'batch.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, metadata: {
+        kind: body.kind,
+        batchId: created.batchId,
+        ...(body.kind === 'ANOTHER_STYLE' && body.pinnedReferenceId ? { pinnedReferenceId: body.pinnedReferenceId } : {}),
+        ...(body.kind === 'ANOTHER_STYLE' && body.referenceIds ? { referenceIds: body.referenceIds } : {}),
+      },
+    });
     res.status(202).json({ batchId: created.batchId, seq: created.seq, status: 'QUEUED' });
   })
 );

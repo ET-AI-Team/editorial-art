@@ -1,4 +1,4 @@
-import type { BatchDto, BatchPlan, DirectionDto, OptionDto, PackAsset, PackDto, RequestDetail, RequestListItem, StyleRef } from '@editorial-art/shared-types';
+import type { BatchDto, BatchPlan, DirectionDto, OptionDto, OptionReference, PackAsset, PackDto, RequestDetail, RequestListItem, StyleRef } from '@editorial-art/shared-types';
 import { BatchPlan as BatchPlanSchema } from '@editorial-art/shared-types';
 import type { Batch, Brief, Direction, Option, PublishPack, Request, Style } from '@prisma/client';
 import { excerpt } from '../lib/text';
@@ -21,7 +21,8 @@ export function packDto(pack: PublishPack): PackDto {
   };
 }
 
-export function optionDto(o: Option & { pack: PublishPack | null }, styles: Map<string, Style>): OptionDto {
+/** `refs` holds at least this option's references (see referencesByIds); one lookup serves a whole response. */
+export function optionDto(o: Option & { pack: PublishPack | null }, styles: Map<string, Style>, refs: Map<string, OptionReference>): OptionDto {
   const style = styles.get(o.styleId);
   return {
     id: o.id,
@@ -36,6 +37,7 @@ export function optionDto(o: Option & { pack: PublishPack | null }, styles: Map<
     blockedReason: o.blockedReason,
     failureReason: o.failureReason,
     pack: o.pack ? packDto(o.pack) : null,
+    references: o.referenceIds.map((id) => refs.get(id)).filter((r): r is OptionReference => !!r),
   };
 }
 
@@ -44,7 +46,7 @@ export type RequestWithEverything = Request & {
   batches: (Batch & { options: (Option & { pack: PublishPack | null })[] })[];
 };
 
-export function requestDetail(r: RequestWithEverything, styles: Map<string, Style>, allowedStyleIds: string[]): RequestDetail {
+export function requestDetail(r: RequestWithEverything, styles: Map<string, Style>, allowedStyleIds: string[], refs: Map<string, OptionReference>): RequestDetail {
   const brief = [...r.briefs].sort((a, b) => b.version - a.version)[0] ?? null;
   const directions: DirectionDto[] = (brief?.directions ?? [])
     .sort((a, b) => a.rank - b.rank)
@@ -66,7 +68,7 @@ export function requestDetail(r: RequestWithEverything, styles: Map<string, Styl
         promptDropped: plan.success ? (plan.data as BatchPlan).promptDropped : false,
         createdAt: b.createdAt.toISOString(),
         completedAt: b.completedAt?.toISOString() ?? null,
-        options: [...b.options].sort((x, y) => x.index - y.index).map((o) => optionDto(o, styles)),
+        options: [...b.options].sort((x, y) => x.index - y.index).map((o) => optionDto(o, styles, refs)),
       };
     });
   return {

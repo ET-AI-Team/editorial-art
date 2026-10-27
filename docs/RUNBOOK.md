@@ -284,3 +284,7 @@ bun run library:delete-generated -- --apply # deletes
 
 Editors can pin one reference when they create a request with a style (`pinnedReferenceId`) or ask
 for another style; every option of that batch then uses the pin and two more by the same artist.
+Instead of a pin, they can choose the references outright (`referenceIds`, 1 to 3 approved references
+of the style, possibly by different artists): every option of that batch is made from exactly those,
+in that order, and a "More" batch made from it keeps them. Sending both fields is refused. Every
+option in the API lists the references it was made with (`references`, with the artist).
