@@ -18,6 +18,7 @@
     "library:upload": "bun run src/scripts/library/upload.ts",
     "library:import": "bun run src/scripts/library/import.ts",
     "library:delete-generated": "bun run src/scripts/library/delete-generated.ts",
+    "library:fresh-start": "bun run src/scripts/library/fresh-start.ts",
     "report:weekly": "bun run src/scripts/report-weekly.ts",
     "purge:expired": "bun run src/scripts/purge-expired.ts",
     "check:health": "bun run src/scripts/check-health.ts",
