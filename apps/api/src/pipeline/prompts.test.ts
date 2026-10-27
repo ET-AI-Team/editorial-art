@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildFinalPrompt, buildPreviewPrompt, type PreviewPromptInput } from './prompts';
+import { buildFinalPrompt, buildJudgeUser, buildPreviewPrompt, CRAFT_BLOCK, type PreviewPromptInput } from './prompts';
+import { JUDGE_SYSTEM_PROMPT, READ_SYSTEM_PROMPT } from './system-prompts';
 
 const style = (photoreal: boolean, allowsPeople = true, slug = photoreal ? 'still-life' : 'ink-wash') =>
   ({
@@ -59,5 +60,40 @@ describe('image prompts', () => {
     expect(p).toContain('Recreate the first attached image');
     expect(p).toContain('PREVIEW');
     expect(p).toContain('Fix only this, change nothing else: remove lettering on the table.');
+  });
+
+  test('every image prompt carries the craft block, and the references set the look while the idea aims higher', () => {
+    for (const input of [base, { ...base, style: style(true, false) }, { ...base, series: true, editorPrompt: 'calm' }]) {
+      const p = buildPreviewPrompt(input);
+      expect(p).toContain(CRAFT_BLOCK);
+      expect(p).toContain('The references set the technique, texture and palette; match them faithfully, and make the idea and composition stronger and more striking than a typical example');
+      expect(p).toContain('Do not copy their subjects, layout or composition.');
+      expect(p).not.toMatch(/in the style of/i);
+      expect(buildFinalPrompt(p)).toContain(CRAFT_BLOCK);
+    }
+    expect(CRAFT_BLOCK).toMatch(/thumbnail/);
+    expect(CRAFT_BLOCK).toMatch(/square 1:1/);
+    expect(CRAFT_BLOCK).toMatch(/No clutter/);
+  });
+
+  test('prompts stay tight', () => {
+    expect(CRAFT_BLOCK.length).toBeLessThanOrEqual(600);
+    expect(buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' }).length).toBeLessThanOrEqual(1_800);
+    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(6_000);
+  });
+
+  test('the read asks for one clever idea per direction, three different ideas, and no stock cliches, keeping every rule', () => {
+    expect(READ_SYSTEM_PROMPT).toContain('ONE clear, clever visual idea a reader gets in about two seconds');
+    expect(READ_SYSTEM_PROMPT).toContain('must differ in the idea itself');
+    expect(READ_SYSTEM_PROMPT).toMatch(/bull versus bear.*lightbulb.*robots for AI.*handshakes.*glowing brains.*piles of coins/s);
+    expect(READ_SYSTEM_PROMPT).toContain('Never put text, letters, numbers, logos');
+    expect(READ_SYSTEM_PROMPT).toContain('Never describe a real news event as a photograph.');
+    expect(READ_SYSTEM_PROMPT).toContain('For HIGH sensitivity, use "absent" or "symbolised" for everyone.');
+  });
+
+  test('the judge scores appeal, clarity of idea and composition alongside the style and the rules', () => {
+    const user = buildJudgeUser(style(false), false);
+    for (const field of ['"appeal"', '"ideaClarity"', '"composition"', '"onStyle"', '"hasText"']) expect(user).toContain(field);
+    expect(JUDGE_SYSTEM_PROMPT).toContain('appeal, clarity of the idea, and composition');
   });
 });

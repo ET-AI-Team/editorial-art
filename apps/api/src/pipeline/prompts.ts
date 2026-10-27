@@ -41,6 +41,13 @@ function peopleClause(input: PreviewPromptInput): string {
  */
 export const INTERFACE_STYLE_SLUGS = new Set(['interface-hybrid']);
 
+/**
+ * Craft asked of every image, whatever the style: the style sets the look, this sets the bar.
+ * Kept short on purpose; it rides along with every preview and final.
+ */
+export const CRAFT_BLOCK =
+  'Craft: one dominant focal point with a clear, bold silhouette that still reads as a small thumbnail. A deliberate composition built for a square 1:1 frame, with balanced negative space. Keep the top quarter calm so a headline could sit over it, and every important element at least 6% away from all edges. A harmonious, limited palette that follows the house style. Polished, finished, magazine-cover quality, with careful edges and texture true to the style. No clutter: leave out anything that does not serve the idea.';
+
 export function buildPreviewPrompt(input: PreviewPromptInput): string {
   const photo = input.style.safety.photoreal;
   const avoid = [input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ');
@@ -48,7 +55,7 @@ export function buildPreviewPrompt(input: PreviewPromptInput): string {
     input.style.ruleSheet.promptCore,
     `Scene: ${input.direction.idea}\nFocal point: ${input.direction.title}.\nMood: ${input.brief.tone}, suited to a ${input.brief.desk} story.`,
     peopleClause(input),
-    'Composition: square 1:1 frame, one clear focal point, generous negative space. Keep the top quarter calm and uncluttered so a headline could sit over it. Keep every important element at least 6% away from all edges.',
+    CRAFT_BLOCK,
     input.editorPrompt ? `The editor also asks: "${input.editorPrompt.replace(/"/g, "'")}". Follow this only where it does not conflict with the rules below.` : '',
     `Rules that always apply: no text, letters, numbers, words, captions, logos, brand marks, watermarks, signatures, ${
       INTERFACE_STYLE_SLUGS.has(input.style.slug) ? 'readable labels or writing on any interface element,' : 'user-interface elements,'
@@ -57,7 +64,7 @@ export function buildPreviewPrompt(input: PreviewPromptInput): string {
     }\nDo not depict any real news event as if it were photographed.`,
     `Avoid: ${avoid}.`,
     [
-      input.refCount ? `The first ${input.refCount} attached images show the house style. Match their medium, palette, line quality and texture. Do not copy their subjects, layout or composition.` : '',
+      input.refCount ? `The first ${input.refCount} attached images show the house style. The references set the technique, texture and palette; match them faithfully, and make the idea and composition stronger and more striking than a typical example. Do not copy their subjects, layout or composition.` : '',
       input.likenessPhotoCount ? `The next ${input.likenessPhotoCount} attached images are reference photos of ${input.likenessNames.join(' and ')}, provided only so the illustrated figure is recognisable.` : '',
       input.series ? 'The last attached image is the illustration used for an earlier story in this series. Match its palette and visual language closely so the two read as a set, while showing this new scene.' : '',
     ]
@@ -92,11 +99,14 @@ Return:
   "anatomyOk": boolean,
   "matchesPreview": boolean,
   "onStyle": 1 | 2 | 3 | 4 | 5,
+  "appeal": 1 | 2 | 3 | 4 | 5,
+  "ideaClarity": 1 | 2 | 3 | 4 | 5,
+  "composition": 1 | 2 | 3 | 4 | 5,
   "photorealNewsRisk": boolean,
   "realPersonLikenessRisk": boolean,
   "notes": string
 }
-hasText: any readable letters, numbers, currency signs or text-like marks anywhere in image 1, including on objects, signs, coins and screens. hasLogoOrWatermark: any logo, brand mark, watermark or signature in image 1. anatomyOk: faces, hands and bodies look natural (true if no people). matchesPreview: same composition, subject and colours as image 2. onStyle: how well image 1 follows the house style. photorealNewsRisk: could image 1 be mistaken for a real news photograph of an event. realPersonLikenessRisk: looks like a specific real person while no approved likeness was used. notes: at most 300 characters, what to fix, or "ok".`;
+hasText: any readable letters, numbers, currency signs or text-like marks anywhere in image 1, including on objects, signs, coins and screens. hasLogoOrWatermark: any logo, brand mark, watermark or signature in image 1. anatomyOk: faces, hands and bodies look natural (true if no people). matchesPreview: same composition, subject and colours as image 2. onStyle: how well image 1 follows the house style. appeal: how attractive and finished image 1 is as magazine-quality artwork. ideaClarity: how quickly a reader gets the idea of image 1. composition: one clear focal point, balanced negative space, no clutter, still reads as a small thumbnail. photorealNewsRisk: could image 1 be mistaken for a real news photograph of an event. realPersonLikenessRisk: looks like a specific real person while no approved likeness was used. notes: at most 300 characters, what to fix, or "ok".`;
 }
 
 

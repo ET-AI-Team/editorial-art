@@ -89,6 +89,10 @@ export const JudgeOutput = z
     anatomyOk: z.boolean(),
     matchesPreview: z.boolean(),
     onStyle: z.number().int().min(1).max(5),
+    /** Craft scores. An answer without them counts as middling, so it neither passes nor fails on them. */
+    appeal: z.number().int().min(1).max(5).default(3),
+    ideaClarity: z.number().int().min(1).max(5).default(3),
+    composition: z.number().int().min(1).max(5).default(3),
     photorealNewsRisk: z.boolean(),
     realPersonLikenessRisk: z.boolean(),
     notes: z.string().max(300),
@@ -96,7 +100,11 @@ export const JudgeOutput = z
   .strict();
 export type JudgeOutput = z.infer<typeof JudgeOutput>;
 
-/** The pass rule lives in code, not in the model: every check must hold. */
+/**
+ * The pass rule lives in code, not in the model: every check must hold. A final that came out
+ * plainly unattractive or broke its composition is retried; the idea itself was fixed when the
+ * editor picked the preview, so `ideaClarity` is recorded but does not fail a final.
+ */
 export function judgePasses(j: JudgeOutput): boolean {
   return (
     !j.hasText &&
@@ -104,6 +112,8 @@ export function judgePasses(j: JudgeOutput): boolean {
     j.anatomyOk &&
     j.matchesPreview &&
     j.onStyle >= 3 &&
+    j.appeal >= 2 &&
+    j.composition >= 2 &&
     !j.photorealNewsRisk &&
     !j.realPersonLikenessRisk
   );

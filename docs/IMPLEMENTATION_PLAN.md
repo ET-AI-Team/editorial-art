@@ -1633,7 +1633,7 @@ With concurrency 8, four previews start together; flash image p50 is about 15 to
 - `photorealNewsRisk` (could be mistaken for a real news photo)
 - `realPersonLikenessRisk` (looks like a specific real person without an approved likeness)
 - `notes`
-6.6.4.3 Pass rule (code, not the model): every boolean is the safe value, `onStyle >= 3`, and `photorealNewsRisk` false. Otherwise the final is retried once with the judge's notes appended ("Fix only this: ..."); a second failure sets `FINAL_FAILED` with the reason, and the preview stays available.
+6.6.4.3 Pass rule (code, not the model): every boolean is the safe value, `onStyle >= 3`, `appeal >= 2`, `composition >= 2` (`ideaClarity` is recorded only: the idea was fixed when the editor picked the preview), and `photorealNewsRisk` false. Otherwise the final is retried once with the judge's notes appended ("Fix only this: ..."); a second failure sets `FINAL_FAILED` with the reason, and the preview stays available.
 
 ### 6.6.5 Result
 
@@ -2764,11 +2764,17 @@ SENSITIVITY RULES
   directions as an empty array.
 
 DIRECTIONS RULES
-- Exactly three directions, ranked 1 (best) to 3, each a genuinely different concept.
-  Do not return three variations of one idea.
-- Each idea is a concrete visual metaphor that a painter could draw: name the main subject,
-  the setting, the focal element and the mood. Avoid abstract words like "synergy" or
-  "growth" without a picture behind them.
+- Exactly three directions, ranked 1 (best) to 3. The three must differ in the idea itself,
+  not only in wording, setting or colour. Do not return three variations of one idea.
+- Each idea is ONE clear, clever visual idea a reader gets in about two seconds: a strong
+  metaphor, a surprising twist, or an emotional hook tied to what the story means, not just
+  what happened. Not a literal scene, and not a busy list of things.
+- Prefer one or two concrete, everyday objects given a twist that carries the meaning.
+  Name the main subject, the twist, the setting if any, and the mood. Avoid abstract words
+  like "synergy" or "growth" without a picture behind them.
+- Avoid stock cliches unless you give them a genuinely new twist: bull versus bear, a
+  lightbulb for ideas, robots for AI, handshakes, glowing brains, piles of coins, rockets.
+- Rank 1 is the most striking idea that is still accurate and fair to the story.
 - Never put text, letters, numbers, logos, brand marks, charts with labels, or headlines
   in the image. Numbers from the story must be expressed visually, not written.
 - Never describe a real news event as a photograph.
@@ -2881,12 +2887,15 @@ or a figure seen from behind.
 People: no identifiable people. Anonymous figures may appear only small, distant, or from behind.
 ```
 
-### A.2.4 Part 4: Composition rules
+### A.2.4 Part 4: Craft (`CRAFT_BLOCK`)
 
 ```
-Composition: square 1:1 frame, one clear focal point, generous negative space. Keep the top
-quarter calm and uncluttered so an optional headline could sit over it. Keep every important
-element at least 6% away from all edges.
+Craft: one dominant focal point with a clear, bold silhouette that still reads as a small
+thumbnail. A deliberate composition built for a square 1:1 frame, with balanced negative space.
+Keep the top quarter calm so a headline could sit over it, and every important element at least
+6% away from all edges. A harmonious, limited palette that follows the house style. Polished,
+finished, magazine-cover quality, with careful edges and texture true to the style. No clutter:
+leave out anything that does not serve the idea.
 ```
 
 ### A.2.5 Part 5: Editor prompt (only when present)
@@ -2916,8 +2925,9 @@ Avoid: {{style.negative joined by ", "}}{{direction.avoid joined by ", "}}.
 ### A.2.8 Part 8: References instruction
 
 ```
-The first {{refCount}} attached images show the house style. Match their medium, palette, line
-quality and texture. Do not copy their subjects, layout or composition.
+The first {{refCount}} attached images show the house style. The references set the technique,
+texture and palette; match them faithfully, and make the idea and composition stronger and more
+striking than a typical example. Do not copy their subjects, layout or composition.
 {{likenessInstruction}}
 ```
 
@@ -2961,7 +2971,8 @@ Model: `EA_JUDGE_MODEL` (gpt-4.1 vision), JSON mode, temperature 0. Images attac
 System:
 ```
 You are a strict quality checker for editorial illustrations at a newspaper.
-You check one final image against the preview it was made from and against house rules.
+You check one final image against the preview it was made from and against house rules,
+and you score its craft: appeal, clarity of the idea, and composition.
 Answer only with JSON in the exact shape given. No prose.
 Be strict about text: any letters, digits, symbols that read as words, or pseudo-text count as text.
 ```
@@ -2981,6 +2992,9 @@ Return:
   "anatomyOk": boolean,               // faces, hands and bodies look natural (true if no people)
   "matchesPreview": boolean,          // same composition, subject and colours as image 2
   "onStyle": 1 | 2 | 3 | 4 | 5,       // how well image 1 follows the house style
+  "appeal": 1 | 2 | 3 | 4 | 5,        // how attractive and finished image 1 is as magazine-quality artwork
+  "ideaClarity": 1 | 2 | 3 | 4 | 5,   // how quickly a reader gets the idea of image 1
+  "composition": 1 | 2 | 3 | 4 | 5,   // one focal point, balanced negative space, no clutter, reads as a thumbnail
   "photorealNewsRisk": boolean,       // could image 1 be mistaken for a real news photograph of an event
   "realPersonLikenessRisk": boolean,  // looks like a specific real person while no approved likeness was used
   "notes": string                     // at most 300 characters: what to fix, or "ok"

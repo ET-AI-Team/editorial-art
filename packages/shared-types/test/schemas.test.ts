@@ -184,6 +184,11 @@ describe('model outputs', () => {
     expect(judgePasses({ ...pass, onStyle: 2 })).toBe(false);
     expect(judgePasses({ ...pass, hasText: true })).toBe(false);
     expect(judgePasses({ ...pass, photorealNewsRisk: true })).toBe(false);
+    // Craft: a missing score is middling; a plainly unattractive or cluttered final is retried.
+    expect(pass.appeal).toBe(3);
+    expect(judgePasses({ ...pass, appeal: 1 })).toBe(false);
+    expect(judgePasses({ ...pass, composition: 1 })).toBe(false);
+    expect(judgePasses({ ...pass, ideaClarity: 1 })).toBe(true);
   });
 
   test('an artwork passes the library screen only on style and with no flag set', () => {
