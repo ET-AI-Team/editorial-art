@@ -22,7 +22,8 @@ import { batchOutcome, moveBatch, moveOption } from './state';
 
 const NEAR_DUPLICATE = 8;
 
-const NO_TEXT_AGAIN =
+/** Added to the prompt for the second pass when the preview check found writing (admin stats count it). */
+export const NO_TEXT_AGAIN =
   'IMPORTANT: the previous attempt had writing in it. Leave every surface blank: no words, letters, numbers, labels, currency symbols or signs on any object, building, boat, flag, screen, coin or chart.';
 
 /** One cheap vision call: previews are what editors judge, so writing on them is caught here. */

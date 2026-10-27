@@ -4,6 +4,7 @@ import {
   ImageModelSettingResponse,
   PutImageModelSettingBody,
   SentImageCall,
+  AdminStatsQuery,
   AdminStyleRow,
   BulkReviewBody,
   GenerateExemplarsBody,
@@ -15,6 +16,7 @@ import {
   type AdminStyleRow as AdminStyleRowT,
 } from '@editorial-art/shared-types';
 import { asyncRoute } from '../lib/async-route';
+import { adminStats, statsRange } from './admin-stats';
 import { invalidateStylesCache } from './styles.routes';
 import { Router, type Request, type RequestHandler } from 'express';
 import multer from 'multer';
@@ -540,6 +542,16 @@ adminRouter.get(
   '/admin/spend',
   asyncRoute(async (_req, res) => {
     res.json(await spendSummary());
+  })
+);
+
+// ---- usage analytics -----------------------------------------------------------------------
+
+/** Usage, speed, cost and quality over [from, to); the last 30 days by default (admin-stats.ts). */
+adminRouter.get(
+  '/admin/stats',
+  asyncRoute(async (req, res) => {
+    res.json(await adminStats(statsRange(parseQuery(AdminStatsQuery, req.query))));
   })
 );
 

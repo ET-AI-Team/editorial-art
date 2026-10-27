@@ -406,6 +406,89 @@ export const PutImageModelSettingBody = z
   .refine((b) => b.previewModel !== undefined || b.finalModel !== undefined || b.finalImageSize !== undefined, 'set previewModel, finalModel or finalImageSize');
 export type PutImageModelSettingBody = z.infer<typeof PutImageModelSettingBody>;
 
+// ---- usage analytics (admin) ---------------------------------------------------------------
+
+/** The longest range GET /admin/stats accepts, and the range it uses when none is given. */
+export const ADMIN_STATS_MAX_DAYS = 366;
+export const ADMIN_STATS_DEFAULT_DAYS = 30;
+
+/** `from` and `to` are ISO instants (any offset); `from` is inclusive and `to` exclusive. Either may be left out. */
+export const AdminStatsQuery = z.object({
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+});
+export type AdminStatsQuery = z.infer<typeof AdminStatsQuery>;
+
+const Count = z.number().int().nonnegative();
+const Inr = z.number();
+/** 0 to 1, or null when there is nothing to divide by. */
+const Rate = z.number().min(0).max(1).nullable();
+
+export const AdminStatsResponse = z.object({
+  range: z.object({ from: Iso, to: Iso }),
+  totals: z.object({
+    requests: Count,
+    batches: Count,
+    previews: Count,
+    previewsFailed: Count,
+    finals: Count,
+    finalsFailed: Count,
+    costInr: Inr,
+    avgFirstPreviewSec: z.number().nullable(),
+    avgFinalSec: z.number().nullable(),
+  }),
+  /** One row per Asia/Kolkata day in the range, oldest first, zeros included. */
+  daily: z.array(
+    z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      requests: Count,
+      batches: Count,
+      finals: Count,
+      costInr: Inr,
+    })
+  ),
+  costByStage: z.array(z.object({ stage: z.string(), calls: Count, costInr: Inr })),
+  costByModel: z.array(
+    z.object({
+      model: z.string(),
+      provider: z.string(),
+      calls: Count,
+      costInr: Inr,
+      p50Ms: z.number().nullable(),
+      p90Ms: z.number().nullable(),
+    })
+  ),
+  byUser: z.array(z.object({ actorUserId: z.string(), requests: Count, batches: Count, finals: Count, costInr: Inr })),
+  /** Every style that is not retired, zeros included. */
+  styles: z.array(
+    z.object({
+      styleId: Id,
+      slug: z.string(),
+      label: z.string(),
+      familySlug: z.string(),
+      familyLabel: z.string(),
+      status: z.enum(['DRAFT', 'CURATING', 'LIVE', 'RETIRED']),
+      batches: Count,
+      picks: Count,
+      finals: Count,
+      costInr: Inr,
+    })
+  ),
+  quality: z.object({
+    judged: Count,
+    avgOnStyle: z.number().nullable(),
+    avgAppeal: z.number().nullable(),
+    avgComposition: z.number().nullable(),
+    textRetryRate: Rate,
+    refusalRate: Rate,
+  }),
+  models: z.object({
+    preview: z.array(z.object({ model: z.string(), count: Count, share: z.number().min(0).max(1) })),
+    final: z.array(z.object({ model: z.string(), count: Count, share: z.number().min(0).max(1) })),
+  }),
+});
+export type AdminStatsResponse = z.infer<typeof AdminStatsResponse>;
+
 // ---- what was sent to the image model (admin) ----------------------------------------------
 
 export const SentImageRole = z.enum(['preview', 'reference', 'likeness', 'series']);
