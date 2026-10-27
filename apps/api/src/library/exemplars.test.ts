@@ -122,7 +122,7 @@ describe('generating an exemplar', () => {
 
 describe('describing an uploaded reference', () => {
   test('fills the description, tags and embedding', async () => {
-    const id = await styleId('collage');
+    const id = await styleId('mixed-media');
     const ref = await db.styleReference.create({
       data: { styleId: id, source: 'ET_ARCHIVE', sourceNote: 'ET archive, 2024', url: 'https://res.cloudinary.com/fake/image/upload/v1/x.webp', publicId: 'x', width: 1600, height: 900, description: '', subjects: [], mood: '' },
     });

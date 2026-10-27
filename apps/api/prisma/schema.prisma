@@ -273,7 +273,7 @@ model StyleFamily {
   styles    Style[]
 }
 
-/// One of the 48 ET house styles (docs/STYLE_LIBRARY.md).
+/// One of the ET house styles (docs/STYLE_LIBRARY.md). Styles that leave the library are retired, never deleted.
 model Style {
   id                String      @id @default(uuid())
   familyId          String

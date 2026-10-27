@@ -25,7 +25,8 @@ function visibleReferences(styleId: string, live: boolean) {
 }
 
 /**
- * Every family with every style that is not retired (Step 7.6). Only LIVE styles are `available`;
+ * Every family with every style that is not retired (Step 7.6). A family with none, such as one
+ * of an earlier library whose styles are all retired, is left out. Only LIVE styles are `available`;
  * the others show what references they have so far, so the whole library can be browsed while
  * it fills in. Up to three covers each: the chosen covers, else the most picked references.
  */
@@ -48,29 +49,26 @@ stylesRouter.get(
     });
     const byStyle = new Map<string, { id: string; url: string }[]>();
     for (const r of refs) byStyle.set(r.styleId, [...(byStyle.get(r.styleId) ?? []), r]);
+    const card = (s: (typeof styles)[number]): StylesResponse['families'][number]['styles'][number] => {
+      const own = byStyle.get(s.id) ?? [];
+      const chosen = s.coverReferenceIds.map((id) => own.find((r) => r.id === id)?.url).filter((u): u is string => !!u);
+      return {
+        id: s.id,
+        slug: s.slug,
+        label: s.label,
+        summary: s.summary,
+        goodFor: s.goodFor,
+        badges: styleBadges(s),
+        covers: (chosen.length ? chosen : own.map((r) => r.url)).slice(0, 3),
+        safety: s.safety,
+        available: s.status === 'LIVE',
+        referenceCount: own.length,
+      };
+    };
     const body: StylesResponse = {
-      families: families.map((f) => ({
-        slug: f.slug as StylesResponse['families'][number]['slug'],
-        label: f.label,
-        styles: styles
-          .filter((s) => s.familySlug === f.slug)
-          .map((s) => {
-            const own = byStyle.get(s.id) ?? [];
-            const chosen = s.coverReferenceIds.map((id) => own.find((r) => r.id === id)?.url).filter((u): u is string => !!u);
-            return {
-              id: s.id,
-              slug: s.slug,
-              label: s.label,
-              summary: s.summary,
-              goodFor: s.goodFor,
-              badges: styleBadges(s),
-              covers: (chosen.length ? chosen : own.map((r) => r.url)).slice(0, 3),
-              safety: s.safety,
-              available: s.status === 'LIVE',
-              referenceCount: own.length,
-            };
-          }),
-      })),
+      families: families
+        .map((f) => ({ slug: f.slug, label: f.label, styles: styles.filter((s) => s.familySlug === f.slug).map(card) }))
+        .filter((f) => f.styles.length > 0),
     };
     cache = { at: Date.now(), body };
     res.json(body);

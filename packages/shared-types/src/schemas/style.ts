@@ -1,19 +1,21 @@
 import { z } from 'zod';
 import { Slug } from './common';
 
+/**
+ * The families of the current library, in gallery order. Families and styles of earlier
+ * libraries stay in the database (retired, never deleted), so a family slug read back from a
+ * stored row may be one that is not listed here: responses carry it as a plain string.
+ */
 export const FAMILY_SLUGS = [
-  'flat-vector',
+  'conceptual-flat',
+  'collage',
+  'objects-sets',
   'painting',
-  'drawing-sketch',
-  'print-poster',
-  'collage-mixed',
-  'handmade-craft',
-  'render-3d',
-  'photo-realism',
-  'cartoon-comic',
-  'pop-graphic',
-  'indian-art',
-  'abstract-surreal',
+  'drawing',
+  'printmaking',
+  'comic-cartoon',
+  'surreal-data',
+  'modern-indian',
 ] as const;
 export const FamilySlug = z.enum(FAMILY_SLUGS);
 export type FamilySlug = z.infer<typeof FamilySlug>;
@@ -65,15 +67,23 @@ export type StyleSeed = z.infer<typeof StyleSeed>;
 
 export const FamilySeed = z.object({ slug: FamilySlug, label: z.string(), sortOrder: z.number().int() }).strict();
 
+/**
+ * The library in STYLE_LIBRARY.md: every family of FAMILY_SLUGS once, in order, each with at
+ * least one style. Families may hold different numbers of styles.
+ */
 export const StyleLibrarySeed = z
-  .object({ families: z.array(FamilySeed).length(FAMILY_SLUGS.length), styles: z.array(StyleSeed).length(4 * FAMILY_SLUGS.length) })
+  .object({ families: z.array(FamilySeed).length(FAMILY_SLUGS.length), styles: z.array(StyleSeed).min(1) })
   .strict()
   .superRefine((v, ctx) => {
     const slugs = new Set(v.styles.map((s) => s.slug));
     if (slugs.size !== v.styles.length) ctx.addIssue({ code: 'custom', message: 'style slugs must be unique' });
-    for (const family of FAMILY_SLUGS) {
-      const count = v.styles.filter((s) => s.familySlug === family).length;
-      if (count !== 4) ctx.addIssue({ code: 'custom', message: `family ${family} has ${count} styles, expected 4` });
+    const families = v.families.map((f) => f.slug);
+    if (families.join() !== FAMILY_SLUGS.join()) ctx.addIssue({ code: 'custom', message: `families must be ${FAMILY_SLUGS.join(', ')}, in that order` });
+    for (const style of v.styles) {
+      if (!families.includes(style.familySlug)) ctx.addIssue({ code: 'custom', message: `style ${style.slug} is in family ${style.familySlug}, which is not listed` });
+    }
+    for (const family of families) {
+      if (!v.styles.some((s) => s.familySlug === family)) ctx.addIssue({ code: 'custom', message: `family ${family} has no styles` });
     }
   });
 export type StyleLibrarySeed = z.infer<typeof StyleLibrarySeed>;

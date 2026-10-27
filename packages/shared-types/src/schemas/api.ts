@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Id, Iso, PublicRequestId, SensitivityLevel, safeText } from './common';
 import { BatchKind, BatchStatus, OptionState, PackSize, PackStatus, RequestStatus } from './states';
-import { FamilySlug, RuleSheet, StyleSafety } from './style';
+import { RuleSheet, StyleSafety } from './style';
 
 /** Limits on what a person can send. The article limits apply after normalisation. */
 export const ARTICLE_MIN_CHARS = 300;
@@ -209,9 +209,13 @@ export const StyleCard = z.object({
 });
 export type StyleCard = z.infer<typeof StyleCard>;
 
-/** Every family, in order, with every style that is not retired, available or not. */
+/**
+ * Every family that has a style that is not retired, in order, with each of those styles,
+ * available or not. The slug is usually one of FAMILY_SLUGS, but a family of an earlier library
+ * still holding a style that is not retired comes back under its stored slug, so it is a string.
+ */
 export const StylesResponse = z.object({
-  families: z.array(z.object({ slug: FamilySlug, label: z.string(), styles: z.array(StyleCard) })),
+  families: z.array(z.object({ slug: z.string(), label: z.string(), styles: z.array(StyleCard) })),
 });
 export type StylesResponse = z.infer<typeof StylesResponse>;
 
@@ -280,7 +284,8 @@ export const AdminStyleRow = z.object({
   id: Id,
   slug: z.string(),
   label: z.string(),
-  familySlug: FamilySlug,
+  /** A string, not FamilySlug: retired styles keep the family of the library they came from. */
+  familySlug: z.string(),
   status: z.enum(['DRAFT', 'CURATING', 'LIVE', 'RETIRED']),
   summary: z.string(),
   goodFor: z.array(z.string()),

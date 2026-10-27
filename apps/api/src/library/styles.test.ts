@@ -8,26 +8,43 @@ beforeAll(resetDb);
 afterAll(() => db.$disconnect());
 
 describe('style library', () => {
-  test('seeding loads 12 families and 48 styles and is safe to repeat', async () => {
-    await db.styleFamily.create({ data: { slug: 'illustration', label: 'Illustration', sortOrder: 99 } });
-    expect(await seedStyles()).toEqual({ families: 12, styles: 48 });
+  test('seeding loads 9 families and 33 styles, retires styles that left the library, and is safe to repeat', async () => {
+    // A family and a style of an earlier library, with a reference.
+    const oldFamily = await db.styleFamily.create({ data: { slug: 'flat-vector', label: 'Flat and vector', sortOrder: 1 } });
+    const oldStyle = await db.style.create({
+      data: { slug: 'editorial-flat', familyId: oldFamily.id, label: 'Editorial flat', summary: 'Old style', ruleSheet: {}, goodFor: ['economy'], safety: {}, sortOrder: 1, status: 'LIVE' },
+    });
+    await db.styleReference.create({
+      data: { styleId: oldStyle.id, source: 'GENERATED', sourceNote: 'old', url: 'https://res.cloudinary.com/fake/image/upload/v1/old.webp', publicId: 'old', width: 1024, height: 1024, description: 'x', subjects: [], mood: 'calm', status: 'APPROVED' },
+    });
+    const empty = await db.styleFamily.create({ data: { slug: 'illustration', label: 'Illustration', sortOrder: 99 } });
+
+    expect(await seedStyles()).toEqual({ families: 9, styles: 33, retired: 1 });
     await db.style.update({ where: { slug: 'ink-wash' }, data: { status: 'LIVE' } });
-    await seedStyles();
-    expect(await db.style.count()).toBe(48);
-    // A family that left the library, with no styles, is gone.
-    expect(await db.styleFamily.count()).toBe(12);
-    expect((await db.style.findUniqueOrThrow({ where: { slug: 'ink-wash' }, include: { family: true } })).family.slug).toBe('drawing-sketch');
-    // Re-seeding never changes a style's status.
+    expect(await seedStyles()).toEqual({ families: 9, styles: 33, retired: 0 });
+
+    // Nothing is deleted: the old style is retired with its reference, and old families stay.
+    expect(await db.style.count()).toBe(34);
+    const retired = await db.style.findUniqueOrThrow({ where: { slug: 'editorial-flat' } });
+    expect(retired.status).toBe('RETIRED');
+    expect(retired.retiredAt).not.toBeNull();
+    expect(await db.styleReference.count({ where: { styleId: oldStyle.id, status: 'APPROVED' } })).toBe(1);
+    expect(await db.styleFamily.count()).toBe(11);
+    expect(await db.styleFamily.findUnique({ where: { id: empty.id } })).not.toBeNull();
+    expect((await db.style.findUniqueOrThrow({ where: { slug: 'ink-wash' }, include: { family: true } })).family.slug).toBe('drawing');
+    // Re-seeding never changes the status of a style in the file.
     expect((await liveStyles()).map((s) => s.slug)).toEqual(['ink-wash']);
   });
 
   test('sensitivity decides which styles are allowed', async () => {
     const styles = new Map((await db.style.findMany()).map((s) => [s.slug, { slug: s.slug, safety: s.safety as never }]));
-    expect(styleAllowed(styles.get('clay-puppet')!, 'NONE')).toBe(true);
-    expect(styleAllowed(styles.get('clay-puppet')!, 'ELEVATED')).toBe(false);
-    expect(styleAllowed(styles.get('editorial-cartoon')!, 'ELEVATED')).toBe(false);
+    for (const slug of ['editorial-cartoon', 'kalighat', 'clay-set', 'bold-comic']) {
+      expect(styleAllowed(styles.get(slug)!, 'NONE')).toBe(true);
+      expect(styleAllowed(styles.get(slug)!, 'ELEVATED')).toBe(false);
+    }
+    expect(styleAllowed(styles.get('grain-metaphor')!, 'ELEVATED')).toBe(true);
     expect(styleAllowed(styles.get('charcoal')!, 'HIGH')).toBe(true);
-    expect(styleAllowed(styles.get('oil-impasto')!, 'HIGH')).toBe(false);
+    expect(styleAllowed(styles.get('gouache')!, 'HIGH')).toBe(false);
     expect(styleAllowed(styles.get('charcoal')!, 'BLOCKED')).toBe(false);
   });
 

@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { buildFinalPrompt, buildPreviewPrompt, type PreviewPromptInput } from './prompts';
 
-const style = (photoreal: boolean, allowsPeople = true) =>
+const style = (photoreal: boolean, allowsPeople = true, slug = photoreal ? 'still-life' : 'ink-wash') =>
   ({
     id: 's',
-    slug: 'ink-wash',
+    slug,
     label: 'Ink and wash',
     summary: '',
-    familySlug: photoreal ? 'photo-realism' : 'drawing-sketch',
+    familySlug: photoreal ? 'objects-sets' : 'drawing',
     goodFor: [],
     ruleSheet: { promptCore: 'An editorial illustration in loose ink line with grey wash.', negative: 'photograph, neon' },
     safety: { allowsPeople, allowsRealPeople: allowsPeople && !photoreal, allowsSensitive: true, photoreal },
@@ -39,6 +39,14 @@ describe('image prompts', () => {
     expect(p).toContain('no people at all');
     expect(p).toContain('objects and places only');
     expect(p).not.toContain('recognisable');
+  });
+
+  test('interface pieces are banned outright, except in an interface style, which still gets no readable writing', () => {
+    expect(buildPreviewPrompt(base)).toContain('user-interface elements');
+    const p = buildPreviewPrompt({ ...base, style: style(false, true, 'interface-hybrid') });
+    expect(p).not.toContain('user-interface elements');
+    expect(p).toContain('no text, letters, numbers');
+    expect(p).toContain('readable labels or writing on any interface element');
   });
 
   test('illustrated people only with likeness photos; otherwise symbolised', () => {

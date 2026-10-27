@@ -35,6 +35,12 @@ function peopleClause(input: PreviewPromptInput): string {
   return 'People: no identifiable people. Anonymous figures may appear only small, distant, or from behind.';
 }
 
+/**
+ * Styles whose look is made of interface pieces (cursors, windows, chat bubbles). They may show
+ * those pieces, but never any readable text on them; every other style shows none at all.
+ */
+export const INTERFACE_STYLE_SLUGS = new Set(['interface-hybrid']);
+
 export function buildPreviewPrompt(input: PreviewPromptInput): string {
   const photo = input.style.safety.photoreal;
   const avoid = [input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ');
@@ -44,7 +50,9 @@ export function buildPreviewPrompt(input: PreviewPromptInput): string {
     peopleClause(input),
     'Composition: square 1:1 frame, one clear focal point, generous negative space. Keep the top quarter calm and uncluttered so a headline could sit over it. Keep every important element at least 6% away from all edges.',
     input.editorPrompt ? `The editor also asks: "${input.editorPrompt.replace(/"/g, "'")}". Follow this only where it does not conflict with the rules below.` : '',
-    `Rules that always apply: no text, letters, numbers, words, captions, logos, brand marks, watermarks, signatures, user-interface elements, or charts with labels anywhere in the image.\n${
+    `Rules that always apply: no text, letters, numbers, words, captions, logos, brand marks, watermarks, signatures, ${
+      INTERFACE_STYLE_SLUGS.has(input.style.slug) ? 'readable labels or writing on any interface element,' : 'user-interface elements,'
+    } or charts with labels anywhere in the image.\n${
       photo ? 'This is a photographic image of objects and places only. No people.' : 'Do not make it look like a photograph.'
     }\nDo not depict any real news event as if it were photographed.`,
     `Avoid: ${avoid}.`,

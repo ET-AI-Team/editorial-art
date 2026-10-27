@@ -107,10 +107,10 @@ describe('admin access', () => {
     expect(res.body.error?.code).toBe('FORBIDDEN');
   });
 
-  test('the styles list has all 48 with counts', async () => {
+  test('the styles list has all 33 with counts', async () => {
     const res = await call('/admin/styles');
     const styles = res.body.styles as { slug: string; status: string; counts: { approved: number } }[];
-    expect(styles).toHaveLength(48);
+    expect(styles).toHaveLength(33);
     expect(styles[0]).toMatchObject({ status: 'DRAFT', counts: { approved: 0 } });
   });
 });
@@ -180,7 +180,7 @@ describe('generating, reviewing and publishing a style', () => {
   });
 
   test('retire stops offering a style', async () => {
-    const id = await styleId('risograph');
+    const id = await styleId('riso-screen');
     const res = await call(`/admin/styles/${id}/retire`, { method: 'POST' });
     expect(res.body.status).toBe('RETIRED');
   });
@@ -197,7 +197,7 @@ describe('generating, reviewing and publishing a style', () => {
 
 describe('uploads', () => {
   test('an ET archive image is stored, queued for description, and described', async () => {
-    const id = await styleId('collage');
+    const id = await styleId('mixed-media');
     const form = new FormData();
     form.append('styleId', id);
     form.append('source', 'ET_ARCHIVE');
@@ -213,7 +213,7 @@ describe('uploads', () => {
 
   test('a file that is not an image is refused, whatever its name says', async () => {
     const form = new FormData();
-    form.append('styleId', await styleId('collage'));
+    form.append('styleId', await styleId('mixed-media'));
     form.append('source', 'LICENSED');
     form.append('sourceNote', 'Licence 123');
     form.append('image', new Blob(['<html>not an image</html>'], { type: 'image/png' }), 'fake.png');

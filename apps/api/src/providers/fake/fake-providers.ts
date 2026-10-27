@@ -112,9 +112,9 @@ export function fakeVector(text: string): number[] {
 
 function availableSlugs(user: string): string[] {
   const at = user.indexOf('AVAILABLE STYLES');
-  if (at === -1) return ['editorial-flat'];
+  if (at === -1) return ['grain-metaphor'];
   const slugs = [...user.slice(at).matchAll(/^- ([a-z0-9]+(?:-[a-z0-9]+)*)\b/gm)].map((m) => m[1]!);
-  return slugs.length ? slugs : ['editorial-flat'];
+  return slugs.length ? slugs : ['grain-metaphor'];
 }
 
 function fakeAnswer(p: ChatJsonParams): unknown {

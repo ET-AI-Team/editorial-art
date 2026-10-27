@@ -4,7 +4,6 @@ import {
   parseStyleLibrary,
   RuleSheet,
   StyleSafety,
-  type FamilySlug,
   type RuleSheet as RuleSheetT,
   type SensitivityLevel,
   type StyleSafety as StyleSafetyT,
@@ -18,7 +17,8 @@ export interface StyleView {
   slug: string;
   label: string;
   summary: string;
-  familySlug: FamilySlug;
+  /** One of FAMILY_SLUGS for a style of the current library; a retired style keeps its old family. */
+  familySlug: string;
   goodFor: string[];
   ruleSheet: RuleSheetT;
   safety: StyleSafetyT;
@@ -36,7 +36,7 @@ export function toStyleView(row: StyleRow): StyleView {
     slug: row.slug,
     label: row.label,
     summary: row.summary,
-    familySlug: row.family.slug as FamilySlug,
+    familySlug: row.family.slug,
     goodFor: row.goodFor,
     ruleSheet: RuleSheet.parse(row.ruleSheet),
     safety: StyleSafety.parse(row.safety),
@@ -90,11 +90,13 @@ export function styleLibraryPath(): string {
 }
 
 /**
- * Upserts the 12 families and 48 styles from STYLE_LIBRARY.md, by slug. Safe to run again: it
- * updates definitions but never changes a style's status, covers or references. A family no
- * longer in the file and left without styles is removed.
+ * Upserts the families and styles in STYLE_LIBRARY.md, by slug. Safe to run again: it updates
+ * definitions but never changes the status, covers or references of a style in the file. A
+ * style no longer in the file is RETIRED (never deleted, and its references are kept), so it
+ * leaves the gallery. Families are never deleted either: a family of an earlier library keeps
+ * its retired styles, and the gallery leaves out a family with no style that is not retired.
  */
-export async function seedStyles(markdown = readFileSync(styleLibraryPath(), 'utf8')): Promise<{ families: number; styles: number }> {
+export async function seedStyles(markdown = readFileSync(styleLibraryPath(), 'utf8')): Promise<{ families: number; styles: number; retired: number }> {
   const seed = parseStyleLibrary(markdown);
   const familyIds = new Map<string, string>();
   for (const f of seed.families) {
@@ -113,6 +115,9 @@ export async function seedStyles(markdown = readFileSync(styleLibraryPath(), 'ut
     };
     await db.style.upsert({ where: { slug: s.slug }, create: { slug: s.slug, ...data }, update: data });
   }
-  await db.styleFamily.deleteMany({ where: { slug: { notIn: seed.families.map((f) => f.slug) }, styles: { none: {} } } });
-  return { families: seed.families.length, styles: seed.styles.length };
+  const retired = await db.style.updateMany({
+    where: { slug: { notIn: seed.styles.map((s) => s.slug) }, status: { not: 'RETIRED' } },
+    data: { status: 'RETIRED', retiredAt: new Date() },
+  });
+  return { families: seed.families.length, styles: seed.styles.length, retired: retired.count };
 }

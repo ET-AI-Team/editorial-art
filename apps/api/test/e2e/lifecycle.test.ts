@@ -11,7 +11,7 @@ let styleIds: Map<string, string>;
 
 beforeAll(async () => {
   h = await startHarness();
-  styleIds = await liveLibrary(['ink-wash', 'swiss-geometric', 'paper-cut', 'charcoal', 'watercolour']);
+  styleIds = await liveLibrary(['ink-wash', 'data-art', 'paper-cut', 'charcoal', 'watercolour']);
 });
 afterAll(() => h.stop());
 
@@ -208,35 +208,50 @@ describe('the artist library', () => {
     expect(legacy.every((i) => i.artist === null && i.sourceUrl === null)).toBe(true);
   });
 
-  test('the gallery shows all 12 families and 48 styles; only LIVE ones are available', async () => {
+  test('the gallery shows the 9 families and their styles; only LIVE ones are available; families with nothing to show are left out', async () => {
     // A style still being rebuilt: an old approved generated exemplar must never show, an artist image does.
-    const curating = await db.style.update({ where: { slug: 'madhubani' }, data: { status: 'CURATING' } });
+    const curating = await db.style.update({ where: { slug: 'gond' }, data: { status: 'CURATING' } });
     await db.styleReference.create({
       data: { styleId: curating.id, source: 'GENERATED', sourceNote: 'old', url: 'https://res.cloudinary.com/fake/image/upload/v1/test/old-gen.webp', publicId: 'test/old-gen', width: 1024, height: 1024, description: 'x', subjects: [], mood: 'calm', status: 'APPROVED' },
     });
-    await artistReferences(curating.id, 1, 2, 'madhubani-artist');
-    await db.style.update({ where: { slug: 'warli' }, data: { status: 'RETIRED' } });
+    await artistReferences(curating.id, 1, 2, 'gond-artist');
+    await db.style.update({ where: { slug: 'kalighat' }, data: { status: 'RETIRED' } });
+    // Families of an earlier library: one whose styles are all retired is left out; one that still
+    // holds a style that is not retired comes back under its old slug and still parses.
+    const template = await db.style.findUniqueOrThrow({ where: { slug: 'ink-wash' } });
+    const oldStyle = (slug: string, familyId: string, status: 'RETIRED' | 'DRAFT') =>
+      db.style.create({ data: { slug, familyId, label: slug, summary: 'An old style', ruleSheet: template.ruleSheet as object, goodFor: ['economy'], safety: template.safety as object, sortOrder: 90, status } });
+    const flat = await db.styleFamily.create({ data: { slug: 'flat-vector', label: 'Flat and vector', sortOrder: 1 } });
+    await oldStyle('editorial-flat', flat.id, 'RETIRED');
+    const indian = await db.styleFamily.create({ data: { slug: 'indian-art', label: 'Indian art', sortOrder: 11 } });
+    await oldStyle('madhubani', indian.id, 'DRAFT');
+    await db.styleFamily.create({ data: { slug: 'abstract-surreal', label: 'Abstract and surreal', sortOrder: 12 } });
     invalidateStylesCache();
 
     const body = StylesResponse.parse((await call(h.base, '/styles')).json);
-    expect(body.families.map((f) => f.slug)).toEqual([...FAMILY_SLUGS]);
-    const cards = body.families.flatMap((f) => f.styles);
-    expect(cards).toHaveLength(47);
-    expect(cards.find((c) => c.slug === 'warli')).toBeUndefined();
-    expect(cards.filter((c) => c.available).map((c) => c.slug).sort()).toEqual(['charcoal', 'ink-wash', 'paper-cut', 'swiss-geometric', 'watercolour']);
+    expect(body.families.map((f) => f.slug).filter((s) => s !== 'indian-art')).toEqual([...FAMILY_SLUGS]);
+    expect(body.families.find((f) => f.slug === 'indian-art')!.styles.map((s) => s.slug)).toEqual(['madhubani']);
+    await db.style.update({ where: { slug: 'madhubani' }, data: { status: 'RETIRED' } });
+    invalidateStylesCache();
+    const now = StylesResponse.parse((await call(h.base, '/styles')).json);
+    expect(now.families.map((f) => f.slug)).toEqual([...FAMILY_SLUGS]);
+    const cards = body.families.filter((f) => f.slug !== 'indian-art').flatMap((f) => f.styles);
+    expect(cards).toHaveLength(32);
+    expect(cards.find((c) => c.slug === 'kalighat')).toBeUndefined();
+    expect(cards.filter((c) => c.available).map((c) => c.slug).sort()).toEqual(['charcoal', 'data-art', 'ink-wash', 'paper-cut', 'watercolour']);
     expect(cards.find((c) => c.slug === 'watercolour')).toMatchObject({ available: true, referenceCount: 20 });
     expect(cards.find((c) => c.slug === 'watercolour')!.covers).toHaveLength(3);
-    const madhubani = cards.find((c) => c.slug === 'madhubani')!;
-    expect(madhubani).toMatchObject({ available: false, referenceCount: 2 });
-    expect(madhubani.covers.some((u) => u.includes('old-gen'))).toBe(false);
-    expect(cards.find((c) => c.slug === 'bauhaus')).toMatchObject({ available: false, referenceCount: 0, covers: [] });
+    const gond = cards.find((c) => c.slug === 'gond')!;
+    expect(gond).toMatchObject({ available: false, referenceCount: 2 });
+    expect(gond.covers.some((u) => u.includes('old-gen'))).toBe(false);
+    expect(cards.find((c) => c.slug === 'etching')).toMatchObject({ available: false, referenceCount: 0, covers: [] });
 
     const refs = StyleReferencesResponse.parse((await call(h.base, `/styles/${curating.id}/references`)).json).items;
     expect(refs).toHaveLength(2);
     expect(refs.every((r) => r.artist !== null)).toBe(true);
-    const empty = await db.style.findUniqueOrThrow({ where: { slug: 'bauhaus' } });
+    const empty = await db.style.findUniqueOrThrow({ where: { slug: 'etching' } });
     expect((await call(h.base, `/styles/${empty.id}/references`)).json).toEqual({ items: [] });
-    const retired = await db.style.findUniqueOrThrow({ where: { slug: 'warli' } });
+    const retired = await db.style.findUniqueOrThrow({ where: { slug: 'kalighat' } });
     expect((await call(h.base, `/styles/${retired.id}/references`)).status).toBe(404);
 
     // Browsable is not usable: a request in a style that is not LIVE is refused.
@@ -278,7 +293,7 @@ describe('guardrails end to end', () => {
     });
     const d = await settledBatch(res.json.requestId as string, 1);
     expect(d.brief?.sensitivity.level).toBe('HIGH');
-    for (const o of d.batches[0]!.options) expect(['ink-wash', 'swiss-geometric', 'charcoal', 'watercolour']).toContain(o.style.slug);
+    for (const o of d.batches[0]!.options) expect(['ink-wash', 'data-art', 'charcoal', 'watercolour']).toContain(o.style.slug);
     expect(d.allowedStyleIds).not.toContain(styleIds.get('paper-cut'));
   });
 

@@ -16,6 +16,7 @@ import {
   higherSensitivity,
   judgePasses,
   parseStyleLibrary,
+  StyleLibrarySeed,
 } from '../src';
 
 const LIBRARY = readFileSync(join(import.meta.dir, '../../../docs/STYLE_LIBRARY.md'), 'utf8');
@@ -23,26 +24,45 @@ const LIBRARY = readFileSync(join(import.meta.dir, '../../../docs/STYLE_LIBRARY.
 describe('style library seed', () => {
   const seed = parseStyleLibrary(LIBRARY);
 
-  test('has 48 styles, 4 in each of the 12 families, in family order', () => {
-    expect(seed.styles).toHaveLength(48);
+  test('has 33 styles in the 9 families, every family with at least one, in family order', () => {
+    expect(seed.styles).toHaveLength(33);
     expect(seed.families.map((f) => f.slug)).toEqual([...FAMILY_SLUGS]);
+    expect(FAMILY_SLUGS).toHaveLength(9);
     const familyOrder = seed.styles.map((s) => FAMILY_SLUGS.indexOf(s.familySlug));
     expect(familyOrder).toEqual([...familyOrder].sort((a, b) => a - b));
+    for (const family of FAMILY_SLUGS) expect(seed.styles.some((s) => s.familySlug === family)).toBe(true);
     expect(seed.styles.map((s) => s.sortOrder)).toEqual(seed.styles.map((_, i) => i + 1));
   });
 
-  test('photoreal styles never allow real people, and the photo family is all photoreal', () => {
-    for (const style of seed.styles.filter((s) => s.safety.photoreal)) expect(style.safety.allowsRealPeople).toBe(false);
-    for (const style of seed.styles.filter((s) => s.familySlug === 'photo-realism')) expect(style.safety.photoreal).toBe(true);
+  test('families may hold different numbers of styles, but never none, and slugs are unique', () => {
+    const counts = FAMILY_SLUGS.map((f) => seed.styles.filter((s) => s.familySlug === f).length);
+    expect(new Set(counts).size).toBeGreaterThan(1);
+    const withoutDrawing = { ...seed, styles: seed.styles.filter((s) => s.familySlug !== 'drawing') };
+    expect(StyleLibrarySeed.safeParse(withoutDrawing).success).toBe(false);
+    const duplicate = { ...seed, styles: [...seed.styles, { ...seed.styles[0]!, sortOrder: 99 }] };
+    expect(StyleLibrarySeed.safeParse(duplicate).success).toBe(false);
+    const oneStyleEach = { ...seed, styles: FAMILY_SLUGS.map((f) => seed.styles.find((s) => s.familySlug === f)!) };
+    expect(StyleLibrarySeed.safeParse(oneStyleEach).success).toBe(true);
+    const oldFamily = { ...seed, styles: [...seed.styles, { ...seed.styles[0]!, slug: 'old-style', familySlug: 'flat-vector' }] };
+    expect(StyleLibrarySeed.safeParse(oldFamily).success).toBe(false);
   });
 
-  test('every style has the three base donts', () => {
+  test('photoreal styles show objects only and never allow real people; no style allows real people yet', () => {
+    const photoreal = seed.styles.filter((s) => s.safety.photoreal).map((s) => s.slug);
+    expect(photoreal.sort()).toEqual(['cinematic-3d', 'photo-montage', 'still-life']);
+    for (const style of seed.styles.filter((s) => s.safety.photoreal)) expect(style.safety.allowsPeople).toBe(false);
+    for (const style of seed.styles) expect(style.safety.allowsRealPeople).toBe(false);
+  });
+
+  test('every style has the three base donts and says no text, letters, numbers or logos', () => {
     for (const style of seed.styles) {
       expect(style.ruleSheet.dont.slice(0, 3)).toEqual([
-        'no text, letters, numbers or symbols that read as writing anywhere in the image',
-        'no logos, brand marks, watermarks or signatures',
+        'no text, letters, numbers or logos anywhere in the image, and nothing that reads as writing',
+        'no brand marks, watermarks or signatures',
         "no imitation of any named artist's signature style",
       ]);
+      expect(style.ruleSheet.promptCore).toContain('No text, letters, numbers or logos.');
+      expect(style.ruleSheet.negative.startsWith('text, letters, numbers, logos')).toBe(true);
     }
   });
 
@@ -68,9 +88,13 @@ describe('style library seed', () => {
     expect(LIBRARY).not.toMatch(/[\u2013\u2014]/);
   });
 
-  test('no rule sheet asks for an imitation of a person', () => {
+  test('no rule sheet asks for an imitation of a person or names an artist', () => {
+    const artists = [...LIBRARY.matchAll(/^- \*\*Reference artists \(curation only\):\*\* (.+)$/gm)].flatMap((m) => m[1]!.split(', '));
+    expect(artists.length).toBeGreaterThan(20);
     for (const style of seed.styles) {
       expect(style.ruleSheet.promptCore.toLowerCase()).not.toContain('in the style of');
+      const sheet = JSON.stringify(style.ruleSheet);
+      for (const name of artists) expect(sheet).not.toContain(name);
     }
   });
 });
