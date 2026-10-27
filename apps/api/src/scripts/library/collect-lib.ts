@@ -286,3 +286,21 @@ export function sniffImageType(buf: Uint8Array): 'jpeg' | 'png' | 'webp' | null 
     return 'webp';
   return null;
 }
+
+// ---- artists -------------------------------------------------------------------------------
+
+export const DEFAULT_ARTISTS = 4;
+export const MAX_ARTISTS = 10;
+
+/** `--artists N`: how many top-ranked artists of each style to collect (default 4, 1 to 10). */
+export function artistsFlag(value: string | boolean | undefined): number {
+  if (value === undefined) return DEFAULT_ARTISTS;
+  const n = typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  if (!Number.isInteger(n) || n < 1 || n > MAX_ARTISTS) throw new Error(`--artists must be a whole number from 1 to ${MAX_ARTISTS}.`);
+  return n;
+}
+
+/** The artists ranked 1 to `top`, best first. */
+export function topRanked<T extends { rank: number }>(artists: T[], top: number): T[] {
+  return artists.filter((a) => a.rank >= 1 && a.rank <= top).sort((a, b) => a.rank - b.rank);
+}

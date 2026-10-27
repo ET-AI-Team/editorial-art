@@ -2,9 +2,9 @@
  * Collects candidate artworks for the artist library from public portfolio pages.
  *
  *   bun run library:collect -- --in <research.json | research-dir> --out <dir>
- *   bun run library:collect -- --in research/ --out out/library --style linocut --max-per-artist 25
+ *   bun run library:collect -- --in research/ --out out/library --style linocut --max-per-artist 25 --artists 6
  *
- * For each style and each of its top four artists it reads the portfolio and project pages,
+ * For each style and each of its top artists (ranks 1 to --artists, default 4, at most 10) it reads the portfolio and project pages,
  * finds the largest version of every artwork image, downloads it (JPEG, PNG or WebP only, at most
  * 15 MB), re-encodes it with sharp to WebP at most 1600 wide (which drops every byte of the
  * original file, metadata included), and writes
@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import sharp from 'sharp';
 import { dHash, hammingDistance } from '../../lib/image';
-import { extractImageCandidates, parseRobots, robotsAllows, sniffImageType, upgradeUrl, type ImageCandidate, type RobotsRule } from './collect-lib';
+import { artistsFlag, extractImageCandidates, parseRobots, robotsAllows, sniffImageType, topRanked, upgradeUrl, type ImageCandidate, type RobotsRule } from './collect-lib';
 import { artistName, COLLECT_MANIFEST, parseFlags, pool, readJson, readResearch, slugOf, writeJson, type CollectEntry, type ResearchArtist, type ResearchEntry } from './common';
 
 const USER_AGENT = 'editorial-art-library/1.0 (+ET AI team)';
@@ -299,11 +299,12 @@ function formatReasons(reasons: Map<string, number>): string {
 }
 
 async function main(): Promise<void> {
-  const flags = parseFlags(process.argv.slice(2), { in: 'string', out: 'string', style: 'string', 'max-per-artist': 'string', concurrency: 'string' });
+  const flags = parseFlags(process.argv.slice(2), { in: 'string', out: 'string', style: 'string', 'max-per-artist': 'string', artists: 'string', concurrency: 'string' });
   if (!flags.in || !flags.out) throw new Error('Pass --in <research.json or directory> and --out <directory>.');
   const out = String(flags.out);
   const maxPerArtist = Math.max(1, Math.min(60, Number(flags['max-per-artist'] ?? 25) || 25));
   const concurrency = Math.max(1, Math.min(12, Number(flags.concurrency ?? 4) || 4));
+  const topArtists = artistsFlag(flags.artists);
   mkdirSync(out, { recursive: true });
 
   const manifestPath = join(out, COLLECT_MANIFEST);
@@ -321,11 +322,11 @@ async function main(): Promise<void> {
 
   const entries = readResearch(String(flags.in)).filter((e) => !flags.style || e.style.slug === flags.style);
   if (!entries.length) throw new Error('No styles found in the research input.');
-  console.log(`Collecting ${entries.length} styles into ${out} (max ${maxPerArtist} per artist).`);
+  console.log(`Collecting ${entries.length} styles into ${out} (top ${topArtists} artists, max ${maxPerArtist} per artist).`);
 
   let total = 0;
   await pool(entries, concurrency, async (entry) => {
-    const artists = [...entry.style.artists].filter((a) => a.rank >= 1 && a.rank <= 4).sort((a, b) => a.rank - b.rank);
+    const artists = topRanked(entry.style.artists, topArtists);
     const styleHashes = ctx.manifest.filter((m) => m.style === entry.style.slug && m.dhash).map((m) => BigInt(`0x${m.dhash}`));
     const lines: string[] = [];
     let styleSaved = 0;

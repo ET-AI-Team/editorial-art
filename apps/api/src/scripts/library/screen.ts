@@ -2,13 +2,15 @@
  * Screens collected artworks against their style and describes the ones worth keeping.
  *
  *   bun run library:screen -- --dir <collect output dir> [--research <file or dir>] [--max-inr 3000] [--style <slug>]
+ *                             [--max-per-artist 8] [--max-per-style 24]
  *
  * Reads <dir>/collect-manifest.json. Each image gets one vision call (gpt-4.1, the judge model)
  * that scores it against the style's rule sheet and flags writing, logos, signatures, real
  * people (photographed or drawn), licensed characters or brands, explicit content and an
- * AI-generated look. Per artist the best 8 passing images
- * are kept, at most 24 per style; those are described and embedded with the same prompt and
- * model as every other library reference, and written to <dir>/library-manifest.json.
+ * AI-generated look. Per artist the best --max-per-artist passing images (default 8) are kept,
+ * at most --max-per-style per style (default 24); raise both to keep more candidates for a person
+ * to pick from (library:import --picks). Those are described and embedded with the same prompt
+ * and model as every other library reference, and written to <dir>/library-manifest.json.
  *
  * Every call goes through the spend guard and the ledger of the database in DATABASE_URL (use
  * the local dev database). The run stops before passing --max-inr. Answers are cached in
@@ -28,7 +30,7 @@ import { styleLibraryPath } from '../../library/styles';
 import { chat } from '../../pipeline/ai';
 import type { ImageData } from '../../providers';
 import { COLLECT_MANIFEST, LIBRARY_MANIFEST, parseFlags, pool, readJson, readResearch, writeJson, type CollectEntry, type LibraryEntry } from './common';
-import { selectKept } from './select';
+import { capFlag, DEFAULT_PER_ARTIST, DEFAULT_PER_STYLE, selectKept } from './select';
 
 const SYSTEM = 'You screen artworks by working illustrators for a house-style reference library. Answer only with JSON in the exact shape given. No prose.';
 
@@ -118,12 +120,22 @@ async function forModel(file: string): Promise<ImageData> {
 }
 
 async function main(): Promise<void> {
-  const flags = parseFlags(process.argv.slice(2), { dir: 'string', research: 'string', 'max-inr': 'string', style: 'string', concurrency: 'string' });
+  const flags = parseFlags(process.argv.slice(2), {
+    dir: 'string',
+    research: 'string',
+    'max-inr': 'string',
+    style: 'string',
+    concurrency: 'string',
+    'max-per-artist': 'string',
+    'max-per-style': 'string',
+  });
   if (!flags.dir) throw new Error('Pass --dir <collect output directory>.');
   const dir = String(flags.dir);
   const maxInr = Number(flags['max-inr'] ?? 3000);
   if (!Number.isFinite(maxInr) || maxInr <= 0) throw new Error('--max-inr must be a positive number.');
   const concurrency = Math.max(1, Math.min(12, Number(flags.concurrency ?? 6) || 6));
+  const perArtist = capFlag(flags['max-per-artist'], '--max-per-artist', DEFAULT_PER_ARTIST);
+  const perStyle = capFlag(flags['max-per-style'], '--max-per-style', DEFAULT_PER_STYLE);
 
   const collected = readJson<CollectEntry[]>(join(dir, COLLECT_MANIFEST), []).filter((e) => !flags.style || e.style === flags.style);
   if (!collected.length) throw new Error(`No images in ${join(dir, COLLECT_MANIFEST)}${flags.style ? ` for ${flags.style}` : ''}.`);
@@ -185,7 +197,7 @@ async function main(): Promise<void> {
   const screened = collected
     .filter((e) => hashes.has(e.file) && ArtworkScreen.safeParse(cache.get(hashes.get(e.file)!)?.screen).success)
     .map((e) => ({ ...e, screen: cache.get(hashes.get(e.file)!)!.screen!, onStyle: cache.get(hashes.get(e.file)!)!.screen!.onStyle }));
-  const kept = styles.flatMap((slug) => selectKept(screened.filter((e) => e.style === slug && artworkPasses(e.screen))));
+  const kept = styles.flatMap((slug) => selectKept(screened.filter((e) => e.style === slug && artworkPasses(e.screen)), perArtist, perStyle));
   const describeEstimate = ESTIMATE_INR.text + ESTIMATE_INR.embed;
   await pool(
     kept,

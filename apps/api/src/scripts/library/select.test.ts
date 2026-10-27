@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { selectKept } from './select';
+import { capFlag, selectKept } from './select';
 
 const item = (artist: string, onStyle: number, id: string) => ({ artist: { slug: artist }, onStyle, id });
 
@@ -24,6 +24,20 @@ describe('which screened artworks a style keeps', () => {
     const per = new Map<string, number>();
     for (const k of kept) per.set(k.artist.slug, (per.get(k.artist.slug) ?? 0) + 1);
     expect([...per.values()].every((n) => n === 6)).toBe(true);
+  });
+});
+
+describe('keeping more candidates for a person to pick from', () => {
+  test('higher caps keep more of each artist and of the style', () => {
+    const items = ['a', 'b', 'c', 'd', 'e'].flatMap((a) => Array.from({ length: 20 }, (_, i) => item(a, 10 - i / 10, `${a}${i}`)));
+    expect(selectKept(items)).toHaveLength(24);
+    expect(selectKept(items, capFlag('15', '--max-per-artist', 8), capFlag('60', '--max-per-style', 24))).toHaveLength(60);
+    expect(selectKept(items, 20, 500)).toHaveLength(100);
+  });
+
+  test('the cap flags are whole numbers from 1 to 500, or the default', () => {
+    expect(capFlag(undefined, '--max-per-artist', 8)).toBe(8);
+    for (const bad of ['0', '501', '1.5', 'all']) expect(() => capFlag(bad, '--max-per-style', 24)).toThrow('--max-per-style');
   });
 });
 

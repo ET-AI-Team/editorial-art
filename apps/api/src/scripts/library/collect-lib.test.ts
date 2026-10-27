@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { dedupeKey, extractImageCandidates, looksLikeUiImage, parseRobots, parseSrcset, robotsAllows, sniffImageType, upgradeUrl } from './collect-lib';
+import { artistsFlag, dedupeKey, extractImageCandidates, looksLikeUiImage, parseRobots, parseSrcset, robotsAllows, sniffImageType, topRanked, upgradeUrl } from './collect-lib';
 
 describe('robots.txt', () => {
   const rules = parseRobots(`
@@ -112,5 +112,20 @@ describe('type sniffing', () => {
     expect(sniffImageType(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))).toBe('webp');
     expect(sniffImageType(new Uint8Array([0x47, 0x49, 0x46, 0x38]))).toBeNull();
     expect(sniffImageType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull();
+  });
+});
+
+describe('which artists are collected', () => {
+  const artists = Array.from({ length: 12 }, (_, i) => ({ rank: 12 - i, name: `a${12 - i}` }));
+
+  test('the top four by default, more with --artists, best first', () => {
+    expect(topRanked(artists, artistsFlag(undefined)).map((a) => a.rank)).toEqual([1, 2, 3, 4]);
+    expect(topRanked(artists, artistsFlag('7')).map((a) => a.rank)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(topRanked(artists, artistsFlag('10'))).toHaveLength(10);
+    expect(topRanked([{ rank: 0 }, { rank: 2 }], 4)).toEqual([{ rank: 2 }]);
+  });
+
+  test('--artists is a whole number from 1 to 10', () => {
+    for (const bad of ['0', '11', '2.5', 'many', true]) expect(() => artistsFlag(bad)).toThrow('--artists');
   });
 });
