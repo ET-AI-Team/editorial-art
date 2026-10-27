@@ -84,6 +84,18 @@ describe('style library seed', () => {
     });
   });
 
+  test('promptCore and palette never prescribe colours: the references set them', () => {
+    const named = /\b(teal|tomato|mustard|cream|navy|ultramarine|cobalt|vermilion|ochre|coral|lilac|lemon|mint|sage|magenta|turmeric|saffron|lapis|malachite|indigo|cerulean|sienna|amber|cyan|graphite|terracotta|marigold|plum|blush|red|blue|green|yellow|orange|pink|violet|purple|gold)\b/i;
+    for (const style of seed.styles) {
+      for (const field of [style.ruleSheet.promptCore, style.ruleSheet.palette]) {
+        expect(field).not.toMatch(/#[0-9a-f]{3,6}\b/i);
+        expect(field).not.toMatch(named);
+        expect(field).not.toMatch(/such as [a-z ]+ on [a-z]+/i);
+      }
+      expect(style.ruleSheet.palette).toContain('taken from the references');
+    }
+  });
+
   test('the file has no em or en dashes', () => {
     expect(LIBRARY).not.toMatch(/[\u2013\u2014]/);
   });
