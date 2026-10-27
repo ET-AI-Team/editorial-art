@@ -22,6 +22,7 @@ describe('configuration', () => {
     expect(env.EA_API_KEY_REQUIRED).toBe(true);
     expect(env.EA_DAILY_SPEND_CAP_INR).toBeUndefined();
     expect(env.EA_BUILD_SPEND_CAP_INR).toBeUndefined();
+    expect(env.EA_ADVICE_MODEL).toBe('gpt-4.1-mini');
   });
 
   test('model names are required, with the variable named in the error', () => {

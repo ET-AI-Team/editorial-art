@@ -14,6 +14,8 @@ import { BadModelOutput, ProviderRefusal, ProviderTimeout, ProviderUnavailable, 
  *   FAKE_JUDGE_FAIL       the final judge finds text in the image
  *   FAKE_BAD_JSON         the read returns JSON in the wrong shape
  *   FAKE_HIGH / FAKE_BLOCKED   the read reports that sensitivity
+ *   FAKE_PHOTO            the photo advisor suggests a real photo
+ *   FAKE_ADVICE_FAIL      the photo advisor's model errors (HTTP 500)
  */
 
 const hueOf = (s: string) => parseInt(createHash('sha256').update(s).digest('hex').slice(0, 6), 16) % 360;
@@ -61,6 +63,7 @@ export function createFakeProviders(options: FakeOptions = {}): Providers & { st
       calls.push({ kind: `chat:${p.kind}`, model: p.model });
       if (latency) await sleep(Math.round(latency / 2));
       if (p.user.includes('FAKE_TIMEOUT')) throw new ProviderTimeout();
+      if (p.kind === 'photo_advice' && p.user.includes('FAKE_ADVICE_FAIL')) throw new ProviderUnavailable(500, 'OpenAI request failed (HTTP 500)');
       return { json: fakeAnswer(p), usage: { input: 2500, cachedInput: 0, output: 600 }, model: p.model };
     },
 
@@ -171,6 +174,11 @@ function fakeAnswer(p: ChatJsonParams): unknown {
       };
     case 'preview_text':
       return { hasText: false, where: '' };
+    case 'photo_advice':
+      if (p.user.includes('FAKE_BAD_JSON')) return { suggestPhoto: 'maybe' };
+      return p.user.includes('FAKE_PHOTO')
+        ? { suggestPhoto: true, kind: 'real-person', reason: 'A named chief executive is at the centre of this results story.' }
+        : { suggestPhoto: false, kind: 'none', reason: 'An analysis piece that an illustration can carry.' };
     case 'screen_artwork':
       return {
         onStyle: p.user.includes('FAKE_OFF_STYLE') ? 3 : 8,

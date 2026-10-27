@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SensitivityLevel, Slug } from './common';
+import { PhotoAdviceKind } from './api';
 
 /**
  * What the models are asked to return. Every model answer is parsed with one of these; an answer
@@ -235,3 +236,13 @@ export function exemplarPasses(s: ExemplarScreen): boolean {
   return !s.hasText && !s.hasWatermarkOrSignature && s.anatomyOk && s.onStyle >= 3;
 }
 
+
+/** The photo advisor's answer. The reason is trimmed to PHOTO_ADVICE_REASON_MAX in code. */
+export const PhotoAdviceOutput = z
+  .object({
+    suggestPhoto: z.boolean(),
+    kind: PhotoAdviceKind,
+    reason: z.string().max(400).default(''),
+  })
+  .strict();
+export type PhotoAdviceOutput = z.infer<typeof PhotoAdviceOutput>;

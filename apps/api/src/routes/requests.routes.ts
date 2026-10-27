@@ -3,9 +3,11 @@ import {
   ARTICLE_MIN_CHARS,
   CreateBatchBody,
   CreateRequestBody,
+  PhotoAdviceBody,
   RequestListQuery,
   type CreateBatchBody as CreateBatchBodyT,
   type CreateRequestBody as CreateRequestBodyT,
+  type PhotoAdviceBody as PhotoAdviceBodyT,
   type SensitivityLevel,
 } from '@editorial-art/shared-types';
 import { Router, type Request } from 'express';
@@ -20,8 +22,9 @@ import { assertCanSpend } from '../lib/spend-guard';
 import { detectLang, excerpt, normaliseArticle } from '../lib/text';
 import { liveStyles, styleAllowed } from '../library/styles';
 import { actorOf } from '../middleware/actor';
-import { rateLimit } from '../middleware/rate-limit';
+import { hitLimit, rateLimit } from '../middleware/rate-limit';
 import { parseQuery, validateBody } from '../middleware/validate';
+import { advisePhoto, SAFE_ADVICE } from '../pipeline/advice';
 import { createBatch, validatePin } from '../pipeline/batches';
 import { emitRequestStatus } from '../pipeline/events';
 import { moveRequest } from '../pipeline/state';
@@ -130,6 +133,24 @@ requestsRouter.post(
     await audit({ action: 'request.create', targetType: 'request', targetId: row.publicId, actorUserId: actor.userId, callerKeyId: req.callerKeyId, metadata: { chars: row.articleChars, removedLines: article.removedLines, styleId: row.styleId, pinnedReferenceId: row.pinnedReferenceId } });
     req.log?.info({ eaRequestId: row.publicId, chars: row.articleChars }, 'request_created');
     res.status(202).json({ requestId: row.publicId, status: row.status, createdAt: row.createdAt.toISOString() });
+  })
+);
+
+/**
+ * The real-photo advisor, asked before POST /requests. Nothing is stored. Always a 200: any failure
+ * (model error, timeout, spend cap, or this route's own per-user limit) answers "no suggestion" so
+ * the editor carries on exactly as before. See pipeline/advice.ts.
+ */
+requestsRouter.post(
+  '/requests/photo-advice',
+  validateBody(PhotoAdviceBody),
+  asyncRoute(async (req, res) => {
+    const actor = actorOf(req);
+    const body = req.body as PhotoAdviceBodyT;
+    const limit = await hitLimit(`advice:u:${actor.userId}`, 2 * env().EA_RATE_CREATE_PER_HOUR).catch(() => ({ allowed: true }));
+    const advice = limit.allowed ? await advisePhoto({ title: body.title, text: body.text }) : SAFE_ADVICE;
+    req.log?.info({ suggestPhoto: advice.suggestPhoto, kind: advice.kind, limited: !limit.allowed }, 'photo_advice');
+    res.json(advice);
   })
 );
 

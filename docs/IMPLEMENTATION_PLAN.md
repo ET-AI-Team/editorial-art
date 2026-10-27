@@ -3588,6 +3588,7 @@ Every variable read by `apps/api/src/lib/env.ts`. "Secret" values are never logg
 | `EA_PREVIEW_FALLBACK_MODEL` | yes | (`gemini-3-pro-image`) | no | preview fallback after refusal or failure |
 | `EA_FINAL_MODEL` | yes | (`gemini-3-pro-image`) | no | finals |
 | `EA_FINAL_FALLBACK_MODEL` | yes | (`gpt-image-2`) | no | final fallback |
+| `EA_ADVICE_MODEL` | no | `gpt-4.1-mini` | no | real-photo advisor (`POST /requests/photo-advice`) |
 | `EA_FAKE_PROVIDERS` | no | `false` | no | use in-memory fakes for all providers |
 | `EA_TEST_CRASH_AT` | no | unset | no | tests only: throws inside a worker after the named stage to simulate a crash (Step 9.5.4); refused at startup when `NODE_ENV=production` |
 | `EA_FAKE_LATENCY_MS` | no | `300` | no | simulated latency for fakes |

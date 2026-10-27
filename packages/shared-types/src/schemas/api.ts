@@ -34,6 +34,32 @@ export type CreateRequestBody = z.infer<typeof CreateRequestBody>;
 export const CreateRequestResponse = z.object({ requestId: PublicRequestId, status: RequestStatus, createdAt: Iso });
 export type CreateRequestResponse = z.infer<typeof CreateRequestResponse>;
 
+// ---- photo advice --------------------------------------------------------------------------
+
+/** Why a story may be better served by a real photo; 'none' when an illustration fits. */
+export const PHOTO_ADVICE_KINDS = ['breaking', 'real-person', 'event-place', 'sports', 'obituary', 'legal', 'none'] as const;
+export const PhotoAdviceKind = z.enum(PHOTO_ADVICE_KINDS);
+export type PhotoAdviceKind = z.infer<typeof PhotoAdviceKind>;
+export const PHOTO_ADVICE_REASON_MAX = 160;
+
+/** Asked before a request is created; nothing is stored. */
+export const PhotoAdviceBody = z
+  .object({
+    title: safeText(1, TITLE_MAX_CHARS).optional(),
+    text: safeText(1, ARTICLE_MAX_CHARS),
+  })
+  .strict();
+export type PhotoAdviceBody = z.infer<typeof PhotoAdviceBody>;
+
+export const PhotoAdviceResponse = z
+  .object({
+    suggestPhoto: z.boolean(),
+    reason: z.string().max(PHOTO_ADVICE_REASON_MAX),
+    kind: PhotoAdviceKind,
+  })
+  .strict();
+export type PhotoAdviceResponse = z.infer<typeof PhotoAdviceResponse>;
+
 // ---- pack and options ----------------------------------------------------------------------
 
 export const PackAsset = z.object({

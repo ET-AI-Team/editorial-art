@@ -4,7 +4,8 @@ import { z } from 'zod';
  * Every setting the service reads, parsed once at startup. A missing or malformed required value
  * stops the process with the variable's name (never its value).
  *
- * Model names have no defaults on purpose: a guessed model string must never ship silently.
+ * Model names have no defaults on purpose: a guessed model string must never ship silently. The one
+ * exception is the photo advisor, a cheap optional suggestion that falls back to 'none' on any error.
  */
 
 const bool = (fallback: boolean) =>
@@ -48,6 +49,7 @@ const Schema = z
     EA_PREVIEW_FALLBACK_MODEL: z.string().min(1),
     EA_FINAL_MODEL: z.string().min(1),
     EA_FINAL_FALLBACK_MODEL: z.string().min(1),
+    EA_ADVICE_MODEL: z.string().min(1).default('gpt-4.1-mini'),
 
     EA_READ_CONCURRENCY: int(6, 1, 64),
     EA_PREVIEW_CONCURRENCY: int(8, 1, 64),

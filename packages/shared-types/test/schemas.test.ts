@@ -9,6 +9,9 @@ import {
   CreateRequestBody,
   FAMILY_SLUGS,
   JudgeOutput,
+  PhotoAdviceBody,
+  PhotoAdviceOutput,
+  PhotoAdviceResponse,
   ReadOutput,
   higherSensitivity,
   judgePasses,
@@ -94,6 +97,23 @@ describe('request bodies', () => {
     expect(CreateBatchBody.safeParse({ kind: 'MORE' }).success).toBe(true);
     expect(CreateBatchBody.safeParse({ kind: 'ANOTHER_STYLE' }).success).toBe(false);
     expect(CreateBatchBody.safeParse({ kind: 'EDIT' }).success).toBe(false);
+  });
+});
+
+describe('photo advice', () => {
+  test('the body needs text; the title is optional; nothing else is allowed', () => {
+    expect(PhotoAdviceBody.safeParse({ text: 'A story.' }).success).toBe(true);
+    expect(PhotoAdviceBody.safeParse({ title: 'T', text: 'A story.' }).success).toBe(true);
+    expect(PhotoAdviceBody.safeParse({ title: 'T' }).success).toBe(false);
+    expect(PhotoAdviceBody.safeParse({ text: 'A'.repeat(40_001) }).success).toBe(false);
+    expect(PhotoAdviceBody.safeParse({ text: 'A story.', extra: 1 }).success).toBe(false);
+  });
+
+  test('the response kind is a closed set and the reason is at most 160 characters', () => {
+    expect(PhotoAdviceResponse.safeParse({ suggestPhoto: true, reason: 'A match report.', kind: 'sports' }).success).toBe(true);
+    expect(PhotoAdviceResponse.safeParse({ suggestPhoto: true, reason: 'x', kind: 'weather' }).success).toBe(false);
+    expect(PhotoAdviceResponse.safeParse({ suggestPhoto: false, reason: 'x'.repeat(161), kind: 'none' }).success).toBe(false);
+    expect(PhotoAdviceOutput.safeParse({ suggestPhoto: 'yes', kind: 'none' }).success).toBe(false);
   });
 });
 
