@@ -12,8 +12,10 @@ import {
   PhotoAdviceBody,
   PhotoAdviceOutput,
   PhotoAdviceResponse,
+  AdminOptionInputs,
   ReaderTestOutput,
   ReadOutput,
+  StoryCheck,
   higherSensitivity,
   judgePasses,
   parseStyleLibrary,
@@ -205,6 +207,15 @@ describe('model outputs', () => {
     expect(ReadOutput.safeParse(withMust(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((x) => `${x} thing`))).success).toBe(false);
     const { whyItFits: _w, ...noWhy } = direction(1);
     expect(ReadOutput.safeParse({ ...read, directions: [noWhy, direction(2), direction(3)] }).success).toBe(false);
+  });
+
+  test('the story check scores 1 to 10 with a reason; admins see it with the reader score', () => {
+    expect(StoryCheck.safeParse({ storyScore: 7, reason: 'The split table reads.' }).success).toBe(true);
+    expect(StoryCheck.safeParse({ storyScore: 0, reason: 'x' }).success).toBe(false);
+    expect(StoryCheck.safeParse({ storyScore: 7.5, reason: 'x' }).success).toBe(false);
+    const story = { score: null, reason: null, redraws: 0, readerScore: null, readerReason: null };
+    expect(AdminOptionInputs.safeParse({ optionId: '11111111-1111-4111-8111-111111111111', preview: null, final: null, story }).success).toBe(true);
+    expect(AdminOptionInputs.safeParse({ optionId: '11111111-1111-4111-8111-111111111111', preview: null, final: null }).success).toBe(false);
   });
 
   test('the reader test scores 1 to 10 and a rewrite is optional', () => {

@@ -63,7 +63,8 @@ export async function closeQueues(): Promise<void> {
 
 export const enqueue = {
   read: (job: ReadJob) => queue('read').add('read', job, jobOptions('read', `read-${job.requestId}`)),
-  preview: (job: PreviewJob, attempt: number) => queue('preview').add('preview', job, jobOptions('preview', `preview-${job.optionId}-${attempt}`)),
+  /** `attempt` is a number, or 'redraw' for an option's one story redraw. */
+  preview: (job: PreviewJob, attempt: number | 'redraw') => queue('preview').add('preview', job, jobOptions('preview', `preview-${job.optionId}-${attempt}`)),
   finalize: (job: FinalizeJob, attempt: number) => queue('finalize').add('finalize', job, jobOptions('finalize', `finalize-${job.optionId}-${attempt}`)),
   pack: (job: PackJob, attempt: number) => queue('pack').add('pack', job, jobOptions('pack', `pack-${job.optionId}-${attempt}`)),
   library: (job: LibraryJob, id: string) => queue('library').add(job.kind, job, jobOptions('library', `library-${id}`)),

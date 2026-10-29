@@ -588,12 +588,23 @@ adminRouter.get(
   '/admin/options/:id/inputs',
   asyncRoute(async (req, res) => {
     const id = idParam(req);
-    const option = await db.option.findUnique({ where: { id }, select: { id: true, previewInput: true, finalInput: true } });
+    const option = await db.option.findUnique({
+      where: { id },
+      select: { id: true, previewInput: true, finalInput: true, storyScore: true, storyReason: true, storyRedraws: true, directionId: true },
+    });
     if (!option) throw ApiError.notFound('Option not found.');
+    const direction = await db.direction.findUnique({ where: { id: option.directionId }, select: { readerScore: true, readerReason: true } });
     const read = (v: unknown) => {
       const parsed = SentImageCall.safeParse(v);
       return parsed.success ? parsed.data : null;
     };
-    res.json(AdminOptionInputs.parse({ optionId: option.id, preview: read(option.previewInput), final: read(option.finalInput) }));
+    const story = {
+      score: option.storyScore,
+      reason: option.storyReason,
+      redraws: option.storyRedraws,
+      readerScore: direction?.readerScore ?? null,
+      readerReason: direction?.readerReason ?? null,
+    };
+    res.json(AdminOptionInputs.parse({ optionId: option.id, preview: read(option.previewInput), final: read(option.finalInput), story }));
   })
 );

@@ -16,6 +16,13 @@ describe('state machines', () => {
     expect(canMove(OPTION_MOVES, 'PACK_READY', 'FINALIZING')).toBe(false);
   });
 
+  test('a ready preview can go back once for a story redraw, and comes back ready if the redraw is abandoned', () => {
+    expect(canMove(OPTION_MOVES, 'PREVIEW_READY', 'PENDING')).toBe(true);
+    expect(canMove(OPTION_MOVES, 'PENDING', 'PREVIEW_READY')).toBe(true);
+    expect(canMove(OPTION_MOVES, 'PREVIEW_READY', 'GENERATING')).toBe(false);
+    expect(canMove(OPTION_MOVES, 'FINALIZING', 'PENDING')).toBe(false);
+  });
+
   test('a request keeps exploring after a final, but a cancelled one stays cancelled', () => {
     expect(canMove(REQUEST_MOVES, 'ACTIVE', 'HAS_FINAL')).toBe(true);
     expect(canMove(REQUEST_MOVES, 'CANCELLED', 'ACTIVE')).toBe(false);

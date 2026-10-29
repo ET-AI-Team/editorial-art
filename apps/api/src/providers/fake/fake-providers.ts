@@ -21,6 +21,12 @@ import { BadModelOutput, ProviderRefusal, ProviderTimeout, ProviderUnavailable, 
  *   FAKE_READER_LOW       the reader test scores direction 2 at 5 and rewrites it; the rewrite scores 9
  *   FAKE_READER_WORSE     as FAKE_READER_LOW, but the rewrite scores 4, so the original stays
  *   FAKE_READER_FAIL      the reader test's model errors (HTTP 500)
+ *   FAKE_STORY_LOW        the story check scores the "house" idea 4 the first time, 8 after
+ *   FAKE_STORY_ALWAYS_LOW the story check scores the "house" idea 3 every time
+ *   FAKE_STORY_WORSE      the story check scores the "house" idea 5, then 2
+ *   FAKE_STORY_FAIL       the story check's model errors (HTTP 500)
+ *
+ * Without those, the story check scores the three fake ideas 7, 9 and 8, so a batch reorders.
  */
 
 const hueOf = (s: string) => parseInt(createHash('sha256').update(s).digest('hex').slice(0, 6), 16) % 360;
@@ -38,12 +44,16 @@ export interface FakeCall {
   quality?: string;
   imageSize?: string;
   imageCount?: number;
+  /** Chat calls with images: the vision detail asked for and the longest side of each image. */
+  imageDetail?: string;
+  imageSides?: number[];
 }
 
 export function createFakeProviders(options: FakeOptions = {}): Providers & { store: Map<string, ImageData>; calls: FakeCall[] } {
   const store = new Map<string, ImageData>();
   const calls: FakeCall[] = [];
   const refusedOnce = new Set<string>();
+  const storyChecked = new Set<string>();
   const latency = options.latencyMs ?? 0;
 
   async function image(p: ImageGenParams, provider: string) {
@@ -75,11 +85,22 @@ export function createFakeProviders(options: FakeOptions = {}): Providers & { st
     calls,
 
     async chatJson(p: ChatJsonParams) {
-      calls.push({ kind: `chat:${p.kind}`, model: p.model });
+      const sideOf = async (buffer: Buffer) => {
+        const meta = await sharp(buffer).metadata();
+        return Math.max(meta.width ?? 0, meta.height ?? 0);
+      };
+      const imageSides = p.images?.length ? await Promise.all(p.images.map((i) => sideOf(i.buffer))) : undefined;
+      calls.push({ kind: `chat:${p.kind}`, model: p.model, ...(imageSides ? { imageDetail: p.imageDetail ?? 'low', imageSides } : {}) });
       if (latency) await sleep(Math.round(latency / 2));
       if (p.user.includes('FAKE_TIMEOUT')) throw new ProviderTimeout();
       if (p.kind === 'photo_advice' && p.user.includes('FAKE_ADVICE_FAIL')) throw new ProviderUnavailable(500, 'OpenAI request failed (HTTP 500)');
       if (p.kind === 'reader_test' && p.user.includes('FAKE_READER_FAIL')) throw new ProviderUnavailable(500, 'OpenAI request failed (HTTP 500)');
+      if (p.kind === 'story_check' && p.user.includes('FAKE_STORY_FAIL')) throw new ProviderUnavailable(500, 'OpenAI request failed (HTTP 500)');
+      if (p.kind === 'story_check') {
+        const first = !storyChecked.has(p.user);
+        storyChecked.add(p.user);
+        return { json: fakeStory(p.user, first), usage: { input: 450, cachedInput: 0, output: 40 }, model: p.model };
+      }
       return { json: fakeAnswer(p), usage: { input: 2500, cachedInput: 0, output: 600 }, model: p.model };
     },
 
@@ -131,6 +152,19 @@ function availableSlugs(user: string): string[] {
   if (at === -1) return ['grain-metaphor'];
   const slugs = [...user.slice(at).matchAll(/^- ([a-z0-9]+(?:-[a-z0-9]+)*)\b/gm)].map((m) => m[1]!);
   return slugs.length ? slugs : ['grain-metaphor'];
+}
+
+const HOUSE = 'A large old house';
+
+function fakeStory(user: string, first: boolean): { storyScore: number; reason: string } {
+  if (user.includes(HOUSE)) {
+    if (user.includes('FAKE_STORY_ALWAYS_LOW')) return { storyScore: 3, reason: 'A house says nothing about this boardroom story.' };
+    if (user.includes('FAKE_STORY_WORSE')) return first ? { storyScore: 5, reason: 'Show the boardroom, not a house.' } : { storyScore: 2, reason: 'Still a house.' };
+    if (user.includes('FAKE_STORY_LOW')) return first ? { storyScore: 4, reason: 'Show the two sides of the boardroom fight.' } : { storyScore: 8, reason: 'The boardroom split reads at once.' };
+    return { storyScore: 8, reason: 'The dark window reads as the missing piece.' };
+  }
+  if (user.includes('chess kings')) return { storyScore: 7, reason: 'The standoff reads, the market less so.' };
+  return { storyScore: 9, reason: 'The calm ticker against the storm tells it.' };
 }
 
 /** The reader test: everything passes unless a magic word marks direction 2 as weak. */

@@ -302,6 +302,15 @@ export const ReaderTestOutput = z
   .strict();
 export type ReaderTestOutput = z.infer<typeof ReaderTestOutput>;
 
+/** Does a finished preview tell this article's story at a glance? 1 to 10, with a reason. */
+export const StoryCheck = z
+  .object({
+    storyScore: z.number().int().min(1).max(10),
+    reason: z.string().max(300),
+  })
+  .strict();
+export type StoryCheck = z.infer<typeof StoryCheck>;
+
 /** The cheap check every preview gets: is there any writing on it? */
 export const PreviewTextCheck = z.object({ hasText: z.boolean(), where: z.string().max(120) }).strict();
 export type PreviewTextCheck = z.infer<typeof PreviewTextCheck>;

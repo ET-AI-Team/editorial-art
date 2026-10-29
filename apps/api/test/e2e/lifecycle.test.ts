@@ -47,9 +47,12 @@ describe('paste to publish pack, with fake providers', () => {
     const batch = d.batches[0]!;
     expect(batch.status).toBe('READY');
     expect(batch.options.map((o) => o.state)).toEqual(['PREVIEW_READY', 'PREVIEW_READY', 'PREVIEW_READY', 'PREVIEW_READY']);
-    // Spread across directions: D1, D2, D3, D1.
-    const ranks = batch.options.map((o) => d.directions.find((x) => x.id === o.directionId)!.rank);
+    // Spread across directions by index: D1, D2, D3, D1.
+    const ranks = [...batch.options].sort((a, b) => a.index - b.index).map((o) => d.directions.find((x) => x.id === o.directionId)!.rank);
     expect(ranks).toEqual([1, 2, 3, 1]);
+    // Listed best story first (the fake check scores D2 9, D3 8, D1 7).
+    expect(batch.options.map((o) => o.index)).toEqual([1, 2, 0, 3]);
+    expect(d.directions.every((x) => x.mustShow.length >= 2 && x.whyItFits)).toBe(true);
     expect(d.costInr).toBeGreaterThan(0);
   });
 
@@ -156,7 +159,9 @@ describe('the admin image model switch', () => {
     expect((await call(h.base, `/admin/options/${option.id}/inputs`)).status).toBe(403);
     const inputs = AdminOptionInputs.parse((await call(h.base, `/admin/options/${option.id}/inputs`, { headers: ADMIN })).json);
     expect(inputs.preview!.model).toBe('gpt-image-2');
-    expect(inputs.preview!.prompt.startsWith('STYLE REFERENCES:')).toBe(true);
+    expect(inputs.preview!.prompt.startsWith('THE STORY (must be clear at thumbnail size):')).toBe(true);
+    expect(inputs.preview!.prompt.indexOf('THE STORY')).toBeLessThan(inputs.preview!.prompt.indexOf('STYLE REFERENCES:'));
+    expect(inputs.story.score).not.toBeNull();
     expect(inputs.preview!.images.map((i) => i.role)).toEqual(row.referenceIds.map(() => 'reference' as const));
     expect(inputs.preview!.images[0]!.label).toBe(`Style reference 1 of ${row.referenceIds.length}:`);
     expect(inputs.final).toBeNull();

@@ -2,6 +2,7 @@ import type { BatchDto, BatchPlan, DirectionDto, OptionDto, OptionReference, Pac
 import { BatchPlan as BatchPlanSchema } from '@editorial-art/shared-types';
 import type { Batch, Brief, Direction, Option, PublishPack, Request, Style } from '@prisma/client';
 import { excerpt } from '../lib/text';
+import { orderByStory } from '../pipeline/story-check';
 
 /** Database rows to the shapes in packages/shared-types. Kept in one place so routes stay thin. */
 
@@ -77,7 +78,8 @@ export function requestDetail(r: RequestWithEverything, styles: Map<string, Styl
         promptDropped: plan.success ? (plan.data as BatchPlan).promptDropped : false,
         createdAt: b.createdAt.toISOString(),
         completedAt: b.completedAt?.toISOString() ?? null,
-        options: [...b.options].sort((x, y) => x.index - y.index).map((o) => optionDto(o, styles, refs)),
+        // Best story first; options without a story score keep their creation order after them.
+        options: orderByStory(b.options).map((o) => optionDto(o, styles, refs)),
       };
     });
   return {

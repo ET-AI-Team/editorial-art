@@ -505,10 +505,21 @@ export type SentImage = z.infer<typeof SentImage>;
 export const SentImageCall = z.object({ model: z.string().nullable(), prompt: z.string(), images: z.array(SentImage) });
 export type SentImageCall = z.infer<typeof SentImageCall>;
 
+/** How well an option tells its story: the image check, its redraws, and its direction's reader test. Null scores were never measured. */
+export const OptionStory = z.object({
+  score: z.number().int().min(1).max(10).nullable(),
+  reason: z.string().nullable(),
+  redraws: z.number().int().min(0),
+  readerScore: z.number().int().min(1).max(10).nullable(),
+  readerReason: z.string().nullable(),
+});
+export type OptionStory = z.infer<typeof OptionStory>;
+
 export const AdminOptionInputs = z.object({
   optionId: Id,
   preview: SentImageCall.nullable(),
   final: SentImageCall.nullable(),
+  story: OptionStory,
 });
 export type AdminOptionInputs = z.infer<typeof AdminOptionInputs>;
 

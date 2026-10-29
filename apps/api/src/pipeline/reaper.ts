@@ -34,12 +34,15 @@ export async function reapOnce(): Promise<number> {
     actions++;
   }
 
-  const options = await db.option.findMany({ where: { state: { in: ['PENDING', 'GENERATING', 'FINALIZING', 'PACKING'] } }, select: { id: true, state: true, previewAttempts: true, updatedAt: true } });
+  const options = await db.option.findMany({ where: { state: { in: ['PENDING', 'GENERATING', 'FINALIZING', 'PACKING'] } }, select: { id: true, state: true, previewAttempts: true, storyRedraws: true, updatedAt: true } });
   for (const o of options) {
     const age = Date.now() - o.updatedAt.getTime();
     if (o.state === 'PENDING' || o.state === 'GENERATING') {
       if (age < 10 * MINUTE) continue;
-      const live = (await hasLiveJob('preview', `preview-${o.id}-1`)) || (await hasLiveJob('preview', `preview-${o.id}-${o.previewAttempts + 1}`));
+      const live =
+        (await hasLiveJob('preview', `preview-${o.id}-1`)) ||
+        (await hasLiveJob('preview', `preview-${o.id}-${o.previewAttempts + 1}`)) ||
+        (o.storyRedraws > 0 && (await hasLiveJob('preview', `preview-${o.id}-redraw`)));
       if (live) continue;
       if (o.previewAttempts < 2) await enqueue.preview({ optionId: o.id }, o.previewAttempts + 1);
       else await failPreview(o.id, new Error('interrupted'));

@@ -251,6 +251,11 @@ model Option {
   finalInput      Json?
   /// Cached subject boxes for smart cropping, as ratios.
   subjectBoxes    Json?
+  /// The story check of the preview, 1 to 10: does it tell this article's story at a glance? Null when the check did not run or failed.
+  storyScore      Int?
+  storyReason     String?
+  /// Story redraws so far. A batch redraws at most one option, once.
+  storyRedraws    Int         @default(0)
   blockedReason   String?
   failureReason   String?
   picked          Boolean     @default(false)

@@ -18,9 +18,11 @@ export const REQUEST_MOVES: Record<RequestStatus, RequestStatus[]> = {
 };
 
 export const OPTION_MOVES: Record<OptionState, OptionState[]> = {
-  PENDING: ['GENERATING', 'PREVIEW_FAILED', 'BLOCKED'],
+  // PENDING -> PREVIEW_READY: a story redraw abandoned before it started keeps its first preview.
+  PENDING: ['GENERATING', 'PREVIEW_FAILED', 'BLOCKED', 'PREVIEW_READY'],
   GENERATING: ['PREVIEW_READY', 'PREVIEW_FAILED', 'BLOCKED', 'PENDING'],
-  PREVIEW_READY: ['FINALIZING'],
+  // PREVIEW_READY -> PENDING: the one story redraw of a batch's weakest option (preview.ts).
+  PREVIEW_READY: ['FINALIZING', 'PENDING'],
   PREVIEW_FAILED: [],
   BLOCKED: [],
   FINALIZING: ['FINAL_READY', 'FINAL_FAILED'],
