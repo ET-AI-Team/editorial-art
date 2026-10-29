@@ -38,11 +38,39 @@ export const ReadPerson = z
   })
   .strict();
 
+/**
+ * The news in the story, read before any image is imagined: what changed, who it happened to,
+ * the conflict, what is at stake, and what a reader should get from the picture in two seconds.
+ */
+export const ReadHook = z
+  .object({
+    claim: z.string().min(1).max(200),
+    /** Companies, people, sectors and places, named exactly as in the article. */
+    actors: z.array(z.string().min(1).max(120)).max(8),
+    /** The verb or conflict: "squeezed", "battle for control", "rate cut lifts". */
+    tension: z.string().min(1).max(120),
+    /** The key number or consequence. */
+    stake: z.string().max(160),
+    readerTakeaway: z.string().min(1).max(200),
+    /** Concrete Indian markers for the picture, or empty when none fit. */
+    indianContext: z.string().max(200),
+  })
+  .strict();
+export type ReadHook = z.infer<typeof ReadHook>;
+
+/** The model is asked for 2 to 4; a fifth or sixth is tolerated and dropped in code. */
+export const MUST_SHOW_MAX = 4;
+export const MustShow = z.array(z.string().min(2).max(120)).min(2).max(6);
+
 export const ReadDirection = z
   .object({
     rank: z.number().int().min(1).max(3),
     title: z.string().min(1).max(60),
     idea: z.string().min(20).max(600),
+    /** Concrete things the image must contain, tied to this story. Never logos or readable text. */
+    mustShow: MustShow,
+    /** One line linking the image to hook.claim. */
+    whyItFits: z.string().min(1).max(200),
     suggestedStyleSlug: Slug,
     reason: z.string().max(120),
     peopleDepicted: z.array(z.object({ name: z.string().max(120), how: PeopleHow }).strict()).max(6),
@@ -68,6 +96,7 @@ export const ReadOutput = z
       .strict(),
     sensitivity: z.object({ level: SensitivityLevel, reasons: z.array(z.string().max(120)).max(4) }).strict(),
     altTextSeed: z.string().min(1).max(200),
+    hook: ReadHook,
     directions: z.array(ReadDirection).max(3),
   })
   .strict()
@@ -237,6 +266,41 @@ export function artworkPasses(s: ArtworkScreen): boolean {
     !s.isAiGeneratedLooking
   );
 }
+
+/** A rewrite of a direction that failed the reader test: the idea only, never its style or people. */
+export const ReaderRewrite = z
+  .object({
+    title: z.string().min(1).max(60),
+    idea: z.string().min(20).max(600),
+    mustShow: MustShow,
+    whyItFits: z.string().min(1).max(200),
+  })
+  .strict();
+export type ReaderRewrite = z.infer<typeof ReaderRewrite>;
+
+/**
+ * The reader test: would someone who has just read the headline connect each direction to the
+ * story in two seconds? 1 to 10, with a reason, and a rewrite for any direction scored under 7
+ * when one was asked for.
+ */
+export const ReaderTestOutput = z
+  .object({
+    directions: z
+      .array(
+        z
+          .object({
+            rank: z.number().int().min(1).max(3),
+            score: z.number().int().min(1).max(10),
+            reason: z.string().max(300),
+            rewrite: ReaderRewrite.nullable().default(null),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(3),
+  })
+  .strict();
+export type ReaderTestOutput = z.infer<typeof ReaderTestOutput>;
 
 /** The cheap check every preview gets: is there any writing on it? */
 export const PreviewTextCheck = z.object({ hasText: z.boolean(), where: z.string().max(120) }).strict();

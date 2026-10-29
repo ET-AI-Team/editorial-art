@@ -94,10 +94,13 @@ export function openaiImageCost(model: string, usage: { textInput?: number; imag
 
 /** Pre-call estimates the spend guard checks against. Deliberately on the high side. */
 export const ESTIMATE_INR = {
-  read: 2,
+  /** Up to 2,200 output tokens now that each direction carries what it must show. */
+  read: 2.5,
   /** gpt-4.1-mini over at most 4,000 characters: well under 0.1 in practice. */
   photoAdvice: 0.1,
   text: 0.5,
+  /** gpt-4.1 scoring three directions and rewriting the weak ones (a re-score is the same call again). */
+  readerTest: 1,
   previewTextCheck: 0.2,
   judge: 1.5,
   embed: 0.01,

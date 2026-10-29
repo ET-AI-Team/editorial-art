@@ -105,16 +105,36 @@ describe('image prompts', () => {
   test('prompts stay tight', () => {
     expect(CRAFT_BLOCK.length).toBeLessThanOrEqual(600);
     expect(buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' }).length).toBeLessThanOrEqual(2_400);
-    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(6_000);
+    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(8_000);
   });
 
-  test('the read asks for one clever idea per direction, three different ideas, and no stock cliches, keeping every rule', () => {
-    expect(READ_SYSTEM_PROMPT).toContain('ONE clear, clever visual idea a reader gets in about two seconds');
+  test('the read finds the news hook first and builds every direction on it', () => {
+    expect(READ_SYSTEM_PROMPT).toContain('NEWS HOOK (work this out first; every direction is built on it)');
+    for (const field of ['hook.claim', 'hook.actors', 'hook.tension', 'hook.stake', 'hook.readerTakeaway', 'hook.indianContext']) expect(READ_SYSTEM_PROMPT).toContain(field);
+    expect(READ_SYSTEM_PROMPT).toContain('named exactly as in the');
+    expect(READ_SYSTEM_PROMPT).toContain("Each idea shows THIS story's specific subject and the tension acting on it.");
+    expect(READ_SYSTEM_PROMPT).toContain('small square thumbnail');
+    expect(READ_SYSTEM_PROMPT).toMatch(/mustShow: 2 to 4 concrete visual elements tied to THIS story[\s\S]*No logos, no readable text, no labels\./);
+    expect(READ_SYSTEM_PROMPT).toContain('whyItFits: one line');
+    expect(READ_SYSTEM_PROMPT).toMatch(/"mustShow": \[string\],\s+"whyItFits": string/);
+  });
+
+  test('the read bans stock cliches unless twisted to the story, and wants three different ideas, keeping every rule', () => {
     expect(READ_SYSTEM_PROMPT).toContain('must differ in the idea itself');
-    expect(READ_SYSTEM_PROMPT).toMatch(/bull versus bear.*lightbulb.*robots for AI.*handshakes.*glowing brains.*piles of coins/s);
+    expect(READ_SYSTEM_PROMPT).toMatch(
+      /Banned stock cliches unless clearly twisted to this story: a lightbulb for ideas, a rocket for\s+growth, a generic bull versus bear, handshakes, glowing brains, a generic plant sprouting from\s+something, piles of coins, chess pieces, puzzle pieces, a seesaw, robots for AI\./
+    );
     expect(READ_SYSTEM_PROMPT).toContain('Never put text, letters, numbers, logos');
+    expect(READ_SYSTEM_PROMPT).toContain('Never let an idea depend on labels');
     expect(READ_SYSTEM_PROMPT).toContain('Never describe a real news event as a photograph.');
     expect(READ_SYSTEM_PROMPT).toContain('For HIGH sensitivity, use "absent" or "symbolised" for everyone.');
+    expect(READ_SYSTEM_PROMPT).toContain('Never depict a minor as an identifiable individual.');
+    expect(READ_SYSTEM_PROMPT).toContain('suggestedStyleSlug must be one slug from the AVAILABLE STYLES list');
+    expect(READ_SYSTEM_PROMPT).toContain('When BLOCKED, still return the brief and the hook');
+  });
+
+  test('no em or en dashes in any prompt', () => {
+    for (const p of [READ_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT, STYLE_REFERENCES_BLOCK, buildPreviewPrompt(base)]) expect(p).not.toMatch(/[\u2013\u2014]/);
   });
 
   test('the judge scores appeal, clarity of idea and composition alongside the style and the rules', () => {

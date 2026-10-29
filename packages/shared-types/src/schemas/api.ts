@@ -136,6 +136,10 @@ export const DirectionDto = z.object({
   rank: z.number().int(),
   title: z.string(),
   idea: z.string(),
+  /** What the image must show, tied to this story. Empty for directions read before it existed. */
+  mustShow: z.array(z.string()),
+  /** One line on how the image tells the story. Empty for directions read before it existed. */
+  whyItFits: z.string(),
   style: StyleRef,
   reason: z.string(),
 });

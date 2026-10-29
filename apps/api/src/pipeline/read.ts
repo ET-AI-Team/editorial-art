@@ -1,4 +1,4 @@
-import { ReadOutput, type ReadDirection, type SensitivityLevel } from '@editorial-art/shared-types';
+import { MUST_SHOW_MAX, ReadOutput, type ReadDirection, type ReadHook, type SensitivityLevel } from '@editorial-art/shared-types';
 import { audit } from '../lib/audit';
 import { db } from '../lib/db';
 import { env } from '../lib/env';
@@ -11,6 +11,7 @@ import { BadModelOutput } from '../providers';
 import { chat, maybeCrash } from './ai';
 import { createBatch } from './batches';
 import { emitRequestStatus } from './events';
+import { runReaderTest, type ReaderVerdict } from './reader-test';
 import { finalSensitivity, fold, sensitivityFloor } from './guard/sensitivity';
 import { stripInstructions } from './guard/strip';
 import { moveRequest } from './state';
@@ -107,9 +108,31 @@ function cleanDirection(d: ReadDirection): ReadDirection {
     ...d,
     title: stripInstructions(d.title, 60).text || `Direction ${d.rank}`,
     idea: stripInstructions(d.idea, 600).text || d.title,
+    mustShow: d.mustShow.map((m) => stripInstructions(m, 120).text).filter(Boolean).slice(0, MUST_SHOW_MAX),
+    whyItFits: stripInstructions(d.whyItFits, 200).text,
     reason: stripInstructions(d.reason, 120).text,
     avoid: d.avoid.map((a) => stripInstructions(a, 80).text).filter(Boolean),
   };
+}
+
+/** The hook reaches image and judge prompts, so it is cleaned like a direction. */
+export function cleanHook(h: ReadHook): ReadHook {
+  const clean = (v: string, max: number) => stripInstructions(v, max).text;
+  return {
+    claim: clean(h.claim, 200),
+    actors: h.actors.map((a) => clean(a, 120)).filter(Boolean),
+    tension: clean(h.tension, 120),
+    stake: clean(h.stake, 160),
+    readerTakeaway: clean(h.readerTakeaway, 200),
+    indianContext: clean(h.indianContext, 200),
+  };
+}
+
+/** A reader-test rewrite replaces the idea only; style, people and avoid list stay as read. */
+export function applyReaderVerdict(d: ReadDirection, verdict: ReaderVerdict | undefined): { d: ReadDirection; readerScore: number | null; readerReason: string | null } {
+  if (!verdict) return { d, readerScore: null, readerReason: null };
+  const next = verdict.rewrite ? cleanDirection({ ...d, ...verdict.rewrite }) : d;
+  return { d: next, readerScore: verdict.score, readerReason: stripInstructions(verdict.reason, 300).text || null };
 }
 
 async function fail(requestId: string, publicId: string, code: string, reason: string): Promise<void> {
@@ -155,7 +178,7 @@ export async function runRead(requestId: string): Promise<void> {
             retryNote,
           }),
           temperature: 0.3,
-          maxTokens: 1500,
+          maxTokens: 2200,
         },
         ReadOutput,
         ESTIMATE_INR.read
@@ -199,6 +222,19 @@ export async function runRead(requestId: string): Promise<void> {
   });
   if (directions.some((x) => !x.style)) return fail(request.id, request.publicId, 'STYLE_NOT_READY', 'No style is available for this story yet.');
 
+  const hook = cleanHook(answer.hook);
+  const verdicts = await runReaderTest(
+    { stage: 'reader_test', requestId: request.id },
+    {
+      headline: request.articleTitle || answer.headline,
+      claim: hook.claim || answer.thesis,
+      tone: answer.tone,
+      level,
+      directions: directions.map(({ d }) => ({ ...d, people: d.peopleDepicted.filter((p) => p.how !== 'absent').map((p) => p.name) })),
+    }
+  );
+  const tested = directions.map((x) => ({ ...applyReaderVerdict(x.d, verdicts?.find((v) => v.rank === x.d.rank)), style: x.style }));
+
   const reasons = [...new Set([...answer.sensitivity.reasons, ...(floor.level === level && level !== 'NONE' ? ['flagged by newsroom rules'] : [])])].slice(0, 4);
   await db.$transaction(async (tx) => {
     const latest = await tx.brief.findFirst({ where: { requestId: request.id }, orderBy: { version: 'desc' }, select: { version: true } });
@@ -214,13 +250,18 @@ export async function runRead(requestId: string): Promise<void> {
         sensitivity: level,
         sensitivityReasons: reasons,
         altTextSeed: answer!.altTextSeed,
+        hook,
         truncatedForRead: forRead.truncated,
         model: env().EA_READ_MODEL,
         directions: {
-          create: directions.map(({ d, style }) => ({
+          create: tested.map(({ d, style, readerScore, readerReason }) => ({
             rank: d.rank,
             title: d.title,
             idea: d.idea,
+            mustShow: d.mustShow,
+            whyItFits: d.whyItFits,
+            readerScore,
+            readerReason,
             suggestedStyleId: style!.id,
             reason: d.reason,
             peopleDepicted: applyPeoplePolicy(d, minors, style!, level, likenesses) as object,

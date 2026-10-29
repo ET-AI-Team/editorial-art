@@ -165,6 +165,8 @@ model Brief {
   sensitivity        Sensitivity
   sensitivityReasons String[]
   altTextSeed        String
+  /// ReadHook (shared-types model-outputs.ts): the news the images must tell. Null for briefs read before it existed.
+  hook               Json?
   truncatedForRead   Boolean     @default(false)
   model              String
   createdAt          DateTime    @default(now()) @db.Timestamptz(3)
@@ -187,6 +189,13 @@ model Direction {
   /// [{ name, how: illustrated | symbolised | absent, likenessId? }]
   peopleDepicted   Json
   avoid            String[]
+  /// 2 to 4 concrete things the image must show, tied to this story.
+  mustShow         String[] @default([])
+  /// One line linking the image to the story's claim.
+  whyItFits        String   @default("")
+  /// The reader test, 1 to 10: does a reader of the headline connect this idea to the story? Null when the test did not run.
+  readerScore      Int?
+  readerReason     String?
 
   @@unique([briefId, rank])
 }

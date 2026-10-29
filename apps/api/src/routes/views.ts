@@ -52,7 +52,16 @@ export function requestDetail(r: RequestWithEverything, styles: Map<string, Styl
     .sort((a, b) => a.rank - b.rank)
     .map((d) => {
       const style = styles.get(d.suggestedStyleId);
-      return { id: d.id, rank: d.rank, title: d.title, idea: d.idea, reason: d.reason, style: style ? styleRef(style) : { id: d.suggestedStyleId, slug: 'unknown', label: 'Unknown' } };
+      return {
+        id: d.id,
+        rank: d.rank,
+        title: d.title,
+        idea: d.idea,
+        mustShow: d.mustShow,
+        whyItFits: d.whyItFits,
+        reason: d.reason,
+        style: style ? styleRef(style) : { id: d.suggestedStyleId, slug: 'unknown', label: 'Unknown' },
+      };
     });
   const batches: BatchDto[] = [...r.batches]
     .sort((a, b) => a.seq - b.seq)

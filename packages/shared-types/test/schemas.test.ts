@@ -12,6 +12,7 @@ import {
   PhotoAdviceBody,
   PhotoAdviceOutput,
   PhotoAdviceResponse,
+  ReaderTestOutput,
   ReadOutput,
   higherSensitivity,
   judgePasses,
@@ -158,6 +159,8 @@ describe('model outputs', () => {
     rank,
     title: `Direction ${rank}`,
     idea: 'Two chess kings face each other across a boardroom table at dusk.',
+    mustShow: ["Tata Sons' Bombay House facade", 'two hands pulling a boardroom table apart'],
+    whyItFits: 'The fight for the board is the story.',
     suggestedStyleSlug: 'ink-wash',
     reason: 'Analytical tone.',
     peopleDepicted: [],
@@ -171,8 +174,49 @@ describe('model outputs', () => {
     entities: { people: [], orgs: [], places: [], objects: [], numbers: [] },
     sensitivity: { level: 'NONE', reasons: [] },
     altTextSeed: 'Two chess kings across a table.',
+    hook: {
+      claim: 'Tata Sons rejects Noel Tata objections to the board vote.',
+      actors: ['Tata Sons', 'Noel Tata', 'Bombay House'],
+      tension: 'battle for control',
+      stake: 'who appoints the chairman',
+      readerTakeaway: 'The Tata board fight is escalating.',
+      indianContext: 'Bombay House in Mumbai',
+    },
     directions: [direction(1), direction(2), direction(3)],
   };
+
+  test('the read carries a news hook, and every direction what it must show and why it fits', () => {
+    const parsed = ReadOutput.parse(read);
+    expect(parsed.hook.tension).toBe('battle for control');
+    expect(parsed.directions[0]!.mustShow).toHaveLength(2);
+    const { hook: _hook, ...noHook } = read;
+    expect(ReadOutput.safeParse(noHook).success).toBe(false);
+    expect(ReadOutput.safeParse({ ...read, hook: { ...read.hook, tension: '' } }).success).toBe(false);
+    expect(ReadOutput.safeParse({ ...read, hook: { ...read.hook, extra: 'x' } }).success).toBe(false);
+    // An empty Indian context is fine: not every story has one.
+    expect(ReadOutput.safeParse({ ...read, hook: { ...read.hook, indianContext: '' } }).success).toBe(true);
+  });
+
+  test('mustShow takes 2 to 4 concrete elements (up to 6 are tolerated and trimmed in code); whyItFits is required', () => {
+    const withMust = (mustShow: string[]) => ({ ...read, directions: [{ ...direction(1), mustShow }, direction(2), direction(3)] });
+    expect(ReadOutput.safeParse(withMust(['one thing'])).success).toBe(false);
+    expect(ReadOutput.safeParse(withMust(['a', 'b'].map((x) => `${x} thing`))).success).toBe(true);
+    expect(ReadOutput.safeParse(withMust(['a', 'b', 'c', 'd', 'e', 'f'].map((x) => `${x} thing`))).success).toBe(true);
+    expect(ReadOutput.safeParse(withMust(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((x) => `${x} thing`))).success).toBe(false);
+    const { whyItFits: _w, ...noWhy } = direction(1);
+    expect(ReadOutput.safeParse({ ...read, directions: [noWhy, direction(2), direction(3)] }).success).toBe(false);
+  });
+
+  test('the reader test scores 1 to 10 and a rewrite is optional', () => {
+    const answer = ReaderTestOutput.parse({ directions: [{ rank: 1, score: 8, reason: 'Gets it.' }] });
+    expect(answer.directions[0]!.rewrite).toBeNull();
+    expect(ReaderTestOutput.safeParse({ directions: [{ rank: 1, score: 11, reason: 'x' }] }).success).toBe(false);
+    expect(
+      ReaderTestOutput.safeParse({
+        directions: [{ rank: 2, score: 5, reason: 'Generic.', rewrite: { title: 'Split table', idea: 'Two hands pull the Tata boardroom table apart.', mustShow: ['a boardroom table', 'two hands'], whyItFits: 'The fight.' } }],
+      }).success
+    ).toBe(true);
+  });
 
   test('needs exactly three ranked directions unless blocked', () => {
     expect(ReadOutput.safeParse(read).success).toBe(true);

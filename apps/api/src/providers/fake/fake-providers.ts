@@ -18,6 +18,9 @@ import { BadModelOutput, ProviderRefusal, ProviderTimeout, ProviderUnavailable, 
  *   FAKE_HIGH / FAKE_BLOCKED   the read reports that sensitivity
  *   FAKE_PHOTO            the photo advisor suggests a real photo
  *   FAKE_ADVICE_FAIL      the photo advisor's model errors (HTTP 500)
+ *   FAKE_READER_LOW       the reader test scores direction 2 at 5 and rewrites it; the rewrite scores 9
+ *   FAKE_READER_WORSE     as FAKE_READER_LOW, but the rewrite scores 4, so the original stays
+ *   FAKE_READER_FAIL      the reader test's model errors (HTTP 500)
  */
 
 const hueOf = (s: string) => parseInt(createHash('sha256').update(s).digest('hex').slice(0, 6), 16) % 360;
@@ -76,6 +79,7 @@ export function createFakeProviders(options: FakeOptions = {}): Providers & { st
       if (latency) await sleep(Math.round(latency / 2));
       if (p.user.includes('FAKE_TIMEOUT')) throw new ProviderTimeout();
       if (p.kind === 'photo_advice' && p.user.includes('FAKE_ADVICE_FAIL')) throw new ProviderUnavailable(500, 'OpenAI request failed (HTTP 500)');
+      if (p.kind === 'reader_test' && p.user.includes('FAKE_READER_FAIL')) throw new ProviderUnavailable(500, 'OpenAI request failed (HTTP 500)');
       return { json: fakeAnswer(p), usage: { input: 2500, cachedInput: 0, output: 600 }, model: p.model };
     },
 
@@ -129,6 +133,32 @@ function availableSlugs(user: string): string[] {
   return slugs.length ? slugs : ['grain-metaphor'];
 }
 
+/** The reader test: everything passes unless a magic word marks direction 2 as weak. */
+function fakeReader(user: string): unknown {
+  const ranks = [...user.matchAll(/<direction rank="(\d)">/g)].map((m) => Number(m[1]));
+  const rewriting = user.includes('REWRITE every direction');
+  const weak = user.includes('FAKE_READER_LOW') || user.includes('FAKE_READER_WORSE');
+  return {
+    directions: ranks.map((rank) => {
+      if (!rewriting) return { rank, score: user.includes('FAKE_READER_WORSE') ? 4 : 9, reason: 'The split boardroom table is this story.' };
+      if (weak && rank === 2) {
+        return {
+          rank,
+          score: 5,
+          reason: 'A ticker river could be any markets story.',
+          rewrite: {
+            title: 'A boardroom table pulled apart',
+            idea: 'Two hands pull a long boardroom table apart in a quiet Mumbai tower while the share screen behind stays calm.',
+            mustShow: ['a boardroom table splitting down the middle', 'two hands pulling it apart', 'a calm share screen behind'],
+            whyItFits: 'The fight is in the boardroom; the market behind it barely moves.',
+          },
+        };
+      }
+      return { rank, score: 8, reason: 'A reader of the headline gets it.', rewrite: null };
+    }),
+  };
+}
+
 function fakeAnswer(p: ChatJsonParams): unknown {
   switch (p.kind) {
     case 'read': {
@@ -151,6 +181,14 @@ function fakeAnswer(p: ChatJsonParams): unknown {
         entities: { people, orgs: ['Example Group'], places: ['Mumbai'], objects: ['boardroom'], numbers: [] },
         sensitivity: { level, reasons: level === 'NONE' ? [] : ['test sensitivity'] },
         altTextSeed: 'Two chess kings facing each other across a boardroom table.',
+        hook: {
+          claim: 'Example Group shares hold steady as a boardroom dispute plays out.',
+          actors: ['Example Group', 'Mumbai'],
+          tension: 'boardroom standoff the market shrugs off',
+          stake: 'control of the group',
+          readerTakeaway: 'The fight is real, but investors are not worried.',
+          indianContext: 'a Mumbai boardroom',
+        },
         directions:
           level === 'BLOCKED'
             ? []
@@ -158,6 +196,8 @@ function fakeAnswer(p: ChatJsonParams): unknown {
                 rank: i + 1,
                 title: ['Two kings, one board', 'Calm ticker', 'House of many rooms'][i]!,
                 idea,
+                mustShow: [['two chess kings', 'a crack across the table'], ['a calm ticker river', 'a glass tower', 'a storm cloud'], ['an old house', 'one dark window'] ][i]!,
+                whyItFits: 'Shows the dispute and the calm market at once.',
                 suggestedStyleSlug: slugs[i % slugs.length]!,
                 reason: 'Fits an analytical markets story.',
                 peopleDepicted: people.length ? [{ name: 'Asha Rao', how: 'illustrated' }] : [],
@@ -189,6 +229,8 @@ function fakeAnswer(p: ChatJsonParams): unknown {
       };
     case 'preview_text':
       return { hasText: false, where: '' };
+    case 'reader_test':
+      return fakeReader(p.user);
     case 'photo_advice':
       if (p.user.includes('FAKE_BAD_JSON')) return { suggestPhoto: 'maybe' };
       return p.user.includes('FAKE_PHOTO')
