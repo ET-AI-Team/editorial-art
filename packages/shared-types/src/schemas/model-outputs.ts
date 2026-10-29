@@ -249,17 +249,29 @@ export const ArtworkScreen = z
   .strict();
 export type ArtworkScreen = z.infer<typeof ArtworkScreen>;
 
+/** How strict the artwork screen is. The defaults are the library's standing rule. */
+export interface ArtworkPassOptions {
+  /** On-style score needed, out of 10. */
+  minOnStyle?: number;
+  /**
+   * Let photos of ordinary people through, for styles such as collage where they are the material.
+   * References only set the look, and a drawn likeness of a real, identifiable person still fails.
+   */
+  allowPeoplePhotos?: boolean;
+}
+
 /**
- * On style (7 or more out of 10) and none of the flags. A signature is never cropped out, so it
- * fails too. No real person, photographed or drawn, ever enters the library.
+ * On style (7 or more out of 10 by default) and none of the flags. A signature is never cropped
+ * out, so it fails too. No drawn likeness of a real person ever enters the library, and no
+ * photographed person unless the run allows people photos.
  */
-export function artworkPasses(s: ArtworkScreen): boolean {
+export function artworkPasses(s: ArtworkScreen, opts: ArtworkPassOptions = {}): boolean {
   return (
-    s.onStyle >= 7 &&
+    s.onStyle >= (opts.minOnStyle ?? 7) &&
     !s.hasReadableText &&
     !s.hasLogoOrWatermark &&
     !s.hasSignature &&
-    !s.isPhotoOfRealPerson &&
+    (opts.allowPeoplePhotos || !s.isPhotoOfRealPerson) &&
     !s.depictsRecognizablePerson &&
     !s.hasLicensedCharacterOrBrand &&
     !s.explicitOrGory &&

@@ -2,7 +2,7 @@
  * Screens collected artworks against their style and describes the ones worth keeping.
  *
  *   bun run library:screen -- --dir <collect output dir> [--research <file or dir>] [--max-inr 3000] [--style <slug>]
- *                             [--max-per-artist 8] [--max-per-style 24]
+ *                             [--max-per-artist 8] [--max-per-style 24] [--min-on-style 7] [--allow-people-photos]
  *
  * Reads <dir>/collect-manifest.json. Each image gets one vision call (gpt-4.1, the judge model)
  * that scores it against the style's rule sheet and flags writing, logos, signatures, real
@@ -128,6 +128,8 @@ async function main(): Promise<void> {
     concurrency: 'string',
     'max-per-artist': 'string',
     'max-per-style': 'string',
+    'min-on-style': 'string',
+    'allow-people-photos': 'boolean',
   });
   if (!flags.dir) throw new Error('Pass --dir <collect output directory>.');
   const dir = String(flags.dir);
@@ -136,6 +138,9 @@ async function main(): Promise<void> {
   const concurrency = Math.max(1, Math.min(12, Number(flags.concurrency ?? 6) || 6));
   const perArtist = capFlag(flags['max-per-artist'], '--max-per-artist', DEFAULT_PER_ARTIST);
   const perStyle = capFlag(flags['max-per-style'], '--max-per-style', DEFAULT_PER_STYLE);
+  const minOnStyle = flags['min-on-style'] === undefined ? 7 : Number(flags['min-on-style']);
+  if (!Number.isFinite(minOnStyle) || minOnStyle < 5 || minOnStyle > 10) throw new Error('--min-on-style must be 5 to 10.');
+  const passOpts = { minOnStyle, allowPeoplePhotos: flags['allow-people-photos'] === true };
 
   const collected = readJson<CollectEntry[]>(join(dir, COLLECT_MANIFEST), []).filter((e) => !flags.style || e.style === flags.style);
   if (!collected.length) throw new Error(`No images in ${join(dir, COLLECT_MANIFEST)}${flags.style ? ` for ${flags.style}` : ''}.`);
@@ -197,7 +202,7 @@ async function main(): Promise<void> {
   const screened = collected
     .filter((e) => hashes.has(e.file) && ArtworkScreen.safeParse(cache.get(hashes.get(e.file)!)?.screen).success)
     .map((e) => ({ ...e, screen: cache.get(hashes.get(e.file)!)!.screen!, onStyle: cache.get(hashes.get(e.file)!)!.screen!.onStyle }));
-  const kept = styles.flatMap((slug) => selectKept(screened.filter((e) => e.style === slug && artworkPasses(e.screen)), perArtist, perStyle));
+  const kept = styles.flatMap((slug) => selectKept(screened.filter((e) => e.style === slug && artworkPasses(e.screen, passOpts)), perArtist, perStyle));
   const describeEstimate = ESTIMATE_INR.text + ESTIMATE_INR.embed;
   await pool(
     kept,
@@ -258,7 +263,7 @@ async function main(): Promise<void> {
     const k = library.filter((e) => e.style === slug);
     const artists = new Set(k.map((e) => e.artist.slug)).size;
     console.log(
-      `${slug.padEnd(26)} ${String(all.length).padStart(6)} ${String(s.length).padStart(9)} ${String(s.filter((e) => artworkPasses(e.screen)).length).padStart(7)} ${String(k.length).padStart(5)} ${String(artists).padStart(8)}`
+      `${slug.padEnd(26)} ${String(all.length).padStart(6)} ${String(s.length).padStart(9)} ${String(s.filter((e) => artworkPasses(e.screen, passOpts)).length).padStart(7)} ${String(k.length).padStart(5)} ${String(artists).padStart(8)}`
     );
   }
   console.log(`\nWrote ${library.length} images to ${manifestPath}. Spent Rs ${(await spent()).toFixed(2)} on this run.`);
