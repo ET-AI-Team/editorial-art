@@ -485,4 +485,16 @@ describe('a weak likeness', () => {
     expect(imageCalls() - before).toBe(4);
     expect((await options(id)).some((o) => o.likenessWeak)).toBe(false);
   });
+
+  test('a named public figure the model symbolised becomes a likeness when faces are allowed', async () => {
+    const { applyPeoplePolicy, directionNames } = await import('./read');
+    const style = { id: 's', slug: 'paper-cut', safety: { allowsPeople: true, allowsRealPeople: true, allowsSensitive: false, photoreal: false } } as never;
+    const d = { title: 'Chandrasekaran with Semiconductor Wafer', idea: 'N. Chandrasekaran holding up a large wafer', peopleDepicted: [{ name: 'N. Chandrasekaran', how: 'symbolised' }, { name: 'Ashwini Vaishnaw', how: 'symbolised' }] } as never;
+    expect(directionNames(d, 'N. Chandrasekaran')).toBe(true);
+    expect(directionNames(d, 'Ashwini Vaishnaw')).toBe(false);
+    const on = { allowed: true, publicFigures: new Set(['n. chandrasekaran', 'ashwini vaishnaw']) };
+    expect(applyPeoplePolicy(d, new Set(), style, 'NONE', [], on).map((p) => p.how)).toEqual(['illustrated', 'symbolised']);
+    expect(applyPeoplePolicy(d, new Set(), style, 'NONE', [], { ...on, allowed: false }).map((p) => p.how)).toEqual(['symbolised', 'symbolised']);
+    expect(applyPeoplePolicy(d, new Set(), style, 'ELEVATED', [], on).map((p) => p.how)).toEqual(['symbolised', 'symbolised']);
+  });
 });

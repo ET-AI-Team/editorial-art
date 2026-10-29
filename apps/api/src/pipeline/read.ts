@@ -15,6 +15,7 @@ import { runReaderTest, type ReaderVerdict } from './reader-test';
 import { finalSensitivity, fold, realFacesAllowedFor, sensitivityFloor } from './guard/sensitivity';
 import { stripInstructions } from './guard/strip';
 import { activeLikenessNames, pauseForPeople, realFacesNote } from './people';
+import { realPeopleAllowed } from '../lib/real-people';
 import { moveRequest } from './state';
 import { READ_SYSTEM_PROMPT } from './system-prompts';
 
@@ -86,20 +87,33 @@ function matchLikeness(name: string, likenesses: LikenessName[]): string | null 
   return hit?.id ?? null;
 }
 
-/** The people policy (Step 6.3.4.4), applied in code whatever the model said. */
+/** Whether the direction's title or idea names the person: their full name or their surname. */
+export function directionNames(direction: Pick<ReadDirection, 'title' | 'idea'>, name: string): boolean {
+  const text = ` ${fold(`${direction.title} ${direction.idea}`).replace(/[^a-z0-9]+/g, ' ')} `;
+  const parts = fold(name).replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w.length > 2);
+  const surname = parts[parts.length - 1];
+  return !!surname && (text.includes(` ${parts.join(' ')} `) || text.includes(` ${surname} `));
+}
+
+/**
+ * The people policy (Step 6.3.4.4), applied in code whatever the model said. When real faces are
+ * allowed for this actor and style, a public figure the direction itself names is drawn as a
+ * likeness even if the model chose to symbolise them: an idea built on a named person is about them.
+ */
 export function applyPeoplePolicy(
   direction: ReadDirection,
   minors: Set<string>,
   style: StyleView,
   level: SensitivityLevel,
-  likenesses: LikenessName[]
+  likenesses: LikenessName[],
+  realFaces: { allowed: boolean; publicFigures: Set<string> } = { allowed: false, publicFigures: new Set() }
 ): PeopleEntry[] {
   return direction.peopleDepicted.map((p) => {
     const isMinor = minors.has(fold(p.name).trim());
     if (isMinor || p.how === 'absent') return { name: p.name, how: 'absent' as const, likenessId: null };
-    if (!realFacesAllowedFor(style, level) || p.how === 'symbolised') {
-      return { name: p.name, how: 'symbolised' as const, likenessId: null };
-    }
+    if (!realFacesAllowedFor(style, level)) return { name: p.name, how: 'symbolised' as const, likenessId: null };
+    const promoted = p.how === 'symbolised' && realFaces.allowed && realFaces.publicFigures.has(fold(p.name).trim()) && directionNames(direction, p.name);
+    if (p.how === 'symbolised' && !promoted) return { name: p.name, how: 'symbolised' as const, likenessId: null };
     return { name: p.name, how: 'illustrated' as const, likenessId: matchLikeness(p.name, likenesses) };
   });
 }
@@ -217,6 +231,10 @@ export async function runRead(requestId: string): Promise<void> {
   }
 
   const minors = new Set(answer.entities.people.filter((p) => p.isMinor).map((p) => fold(p.name).trim()));
+  const realFaces = {
+    allowed: realPeopleAllowed(request.actorRole),
+    publicFigures: new Set(answer.entities.people.filter((p) => p.isPublicFigure && !p.isMinor).map((p) => fold(p.name).trim())),
+  };
   const directions = answer.directions.map(cleanDirection).map((d) => {
     const style = resolveDirectionStyle(d.suggestedStyleSlug, answer!.desk, styles, level, chosen);
     return { d, style };
@@ -265,7 +283,7 @@ export async function runRead(requestId: string): Promise<void> {
             readerReason,
             suggestedStyleId: style!.id,
             reason: d.reason,
-            peopleDepicted: applyPeoplePolicy(d, minors, style!, level, likenesses) as object,
+            peopleDepicted: applyPeoplePolicy(d, minors, style!, level, likenesses, realFaces) as object,
             avoid: d.avoid,
           })),
         },

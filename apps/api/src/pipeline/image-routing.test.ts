@@ -56,7 +56,7 @@ describe('image routing', () => {
     expect(attempts.every((a) => Number(a.costInr) > 0)).toBe(true);
   });
 
-  test('when Gemini is down, one OpenAI model is tried; when OpenAI is down, one Gemini model', async () => {
+  test('when Gemini is down, flash tries pro and then OpenAI; when OpenAI is down, one Gemini model', async () => {
     const a = await routedImage(ctx, request('gemini-3.1-flash-image', 'FAKE_GEMINI_DOWN'));
     expect(a.model).toBe('gpt-image-2');
     expect(a.sent.model).toBe('gpt-image-2');
@@ -64,15 +64,23 @@ describe('image routing', () => {
     expect(b.model).toBe('gemini-3-pro-image');
     expect(fake.calls.map((c) => `${c.kind}:${c.model}`)).toEqual([
       'image:gemini:gemini-3.1-flash-image',
+      'image:gemini:gemini-3-pro-image',
       'image:openai:gpt-image-2',
       'image:openai:gpt-image-2',
       'image:gemini:gemini-3-pro-image',
     ]);
   });
 
-  test('a refusal falls back to the other provider; two refusals are a refusal', async () => {
+  test('a refusal falls back to the other provider; refusals from every model are a refusal', async () => {
     const r = await routedImage(ctx, request('gemini-3-pro-image', 'FAKE_REFUSE_PRIMARY'));
     expect(r.model).toBe('gpt-image-2');
     await expect(routedImage(ctx, request('gemini-3-pro-image', 'FAKE_REFUSE'))).rejects.toBeInstanceOf(ProviderRefusal);
+  });
+
+  test('flash that fails falls back to pro before switching provider', async () => {
+    const { imageModelChain } = await import('../lib/settings');
+    expect(imageModelChain('gemini-3.1-flash-image')).toEqual(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2']);
+    expect(imageModelChain('gemini-3-pro-image')).toEqual(['gemini-3-pro-image', 'gpt-image-2']);
+    expect(imageModelChain('gpt-image-2')).toEqual(['gpt-image-2', 'gemini-3-pro-image']);
   });
 });

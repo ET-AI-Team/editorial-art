@@ -1,7 +1,7 @@
 import type { ImageSize, SentImage, SentImageCall } from '@editorial-art/shared-types';
 import { StageError } from '../lib/errors';
 import { imageEstimateInr } from '../lib/pricing';
-import { crossProviderFallback, providerOf } from '../lib/settings';
+import { imageModelChain, providerOf } from '../lib/settings';
 import { ProviderRefusal, type ImageData, type ImageGenResult } from '../providers';
 import { generateImage, type CallContext } from './ai';
 import { imageLabels } from './prompts';
@@ -39,7 +39,7 @@ export async function routedImage(ctx: CallContext, req: ImageRequest): Promise<
     req.sources.map((s) => s.role),
     req.likenessNames
   );
-  const models = [req.model, crossProviderFallback(req.model)];
+  const models = imageModelChain(req.model);
   let refusals = 0;
   let lastError: unknown;
   for (const model of models) {
@@ -67,7 +67,7 @@ export async function routedImage(ctx: CallContext, req: ImageRequest): Promise<
       lastError = error;
     }
   }
-  // Both refused: for a preview this blocks the idea.
-  if (refusals === models.length) throw new ProviderRefusal(models[1]!, "This idea couldn't be illustrated safely. Try More options.");
+  // Every model refused: for a preview this blocks the idea.
+  if (refusals === models.length) throw new ProviderRefusal(models[models.length - 1]!, "This idea couldn't be illustrated safely. Try More options.");
   throw lastError;
 }

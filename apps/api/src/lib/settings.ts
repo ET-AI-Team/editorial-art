@@ -80,6 +80,19 @@ export function crossProviderFallback(model: string): ImageModelIdT {
   return providerOf(model) === 'gemini' ? 'gpt-image-2' : 'gemini-3-pro-image';
 }
 
+/**
+ * The models to try for one image, in order: the chosen one, then the faster same-provider step
+ * when there is one (flash to pro, which is quicker than switching provider at 2K), then the other
+ * provider.
+ */
+export function imageModelChain(model: string): ImageModelIdT[] {
+  const chain = [model as ImageModelIdT];
+  if (model === 'gemini-3.1-flash-image') chain.push('gemini-3-pro-image');
+  const cross = crossProviderFallback(model);
+  if (!chain.includes(cross)) chain.push(cross);
+  return chain;
+}
+
 /** One preview by the chosen model at the configured size, for the spend guard. */
 export async function previewEstimateInr(): Promise<number> {
   return imageEstimateInr((await imageModels()).previewModel, env().EA_PREVIEW_IMAGE_SIZE);
