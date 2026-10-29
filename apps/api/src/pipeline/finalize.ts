@@ -12,6 +12,7 @@ import { fetchCached, inputImages, loadOptionContext, type InputImages, type Opt
 import { describeCall, routedImage } from './image-routing';
 import { emitFinalReady, emitOptionFailed, emitRequestStatus } from './events';
 import { enqueue } from '../queues/queues';
+import { likenessStyle } from './likeness-check';
 import { buildFinalPrompt, buildJudgeUser, imageLabels } from './prompts';
 import { previewPromptFor } from './preview';
 import { moveOption, moveRequest } from './state';
@@ -45,7 +46,7 @@ async function judge(ctx: OptionContext, finalImage: Buffer, preview: ImageData)
       kind: 'judge',
       model: env().EA_JUDGE_MODEL,
       system: JUDGE_SYSTEM_PROMPT,
-      user: buildJudgeUser(ctx.style, ctx.likenessNames.length > 0),
+      user: buildJudgeUser(likenessStyle(ctx.style, ctx.likenessNames), ctx.likenessNames.length > 0),
       images: [{ buffer: small, mimeType: 'image/png' }, preview],
       temperature: 0,
       maxTokens: 400,

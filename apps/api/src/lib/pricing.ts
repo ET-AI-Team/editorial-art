@@ -104,6 +104,8 @@ export const ESTIMATE_INR = {
   previewTextCheck: 0.2,
   /** gpt-4.1 with one 512px image at low detail. */
   storyCheck: 0.2,
+  /** The drawn face against up to two reference photos, all at 512 and low detail. */
+  likenessCheck: 0.3,
   judge: 1.5,
   embed: 0.01,
   /** A 1K flash image, as library exemplars are made. Pipeline images use imageEstimateInr. */

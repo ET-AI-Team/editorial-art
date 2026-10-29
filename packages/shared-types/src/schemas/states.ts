@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const RequestStatus = z.enum([
   'RECEIVED',
   'READING',
+  /** Paused after the read while the editor confirms the real people found in the story. */
+  'NEEDS_PEOPLE_CONFIRM',
   'DIRECTIONS_READY',
   'ACTIVE',
   'HAS_FINAL',

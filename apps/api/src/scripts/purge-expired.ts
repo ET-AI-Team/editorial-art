@@ -30,7 +30,7 @@ async function main(): Promise<void> {
       // The recorded image prompts carry the editor's prompt, so they go too.
       await db.option.updateMany({ where: { requestId: { in: ids } }, data: { previewInput: Prisma.DbNull, finalInput: Prisma.DbNull } });
       // Only states that can move to EXPIRED; a request still working keeps its status until done.
-      await db.request.updateMany({ where: { id: { in: ids }, status: { in: ['ACTIVE', 'HAS_FINAL', 'FAILED', 'CANCELLED'] } }, data: { status: 'EXPIRED' } });
+      await db.request.updateMany({ where: { id: { in: ids }, status: { in: ['NEEDS_PEOPLE_CONFIRM', 'ACTIVE', 'HAS_FINAL', 'FAILED', 'CANCELLED'] } }, data: { status: 'EXPIRED' } });
     }
   }
 

@@ -126,6 +126,8 @@ export const OptionDto = z.object({
   pack: PackDto.nullable(),
   /** The references sent to the image model, in the order they were sent. */
   references: z.array(OptionReference),
+  /** A real person's face still looked unlike their reference photos after one redraw. */
+  likenessWeak: z.boolean(),
 });
 export type OptionDto = z.infer<typeof OptionDto>;
 
@@ -223,6 +225,66 @@ export const CreateBatchResponse = z.object({ batchId: Id, seq: z.number().int()
 export type CreateBatchResponse = z.infer<typeof CreateBatchResponse>;
 
 export const FinalizeResponse = z.object({ optionId: Id, state: OptionState });
+
+// ---- real people ---------------------------------------------------------------------------
+
+/**
+ * What an editor does with one real person found in a story: use the photo shown, try the next
+ * match, use a photo they uploaded (a URL from AI Studio's own upload), or show the person
+ * without a face. Only for actors the EA_REAL_PEOPLE gate allows.
+ */
+export const PEOPLE_ACTIONS = ['use', 'swap', 'symbolic', 'upload'] as const;
+export const PeopleAction = z.enum(PEOPLE_ACTIONS);
+export type PeopleAction = z.infer<typeof PeopleAction>;
+
+export const PeopleDecisionBody = z
+  .object({
+    action: PeopleAction,
+    /** `upload` only: an https image URL on res.cloudinary.com. */
+    url: z.string().url().max(2000).optional(),
+  })
+  .strict()
+  .refine((b) => b.action !== 'upload' || Boolean(b.url), { message: 'upload needs a url', path: ['url'] })
+  .refine((b) => b.action === 'upload' || !b.url, { message: 'only upload takes a url', path: ['url'] });
+export type PeopleDecisionBody = z.infer<typeof PeopleDecisionBody>;
+
+export const PersonDecision = z.enum(['PENDING', 'USE', 'UPLOAD', 'SYMBOLIC']);
+export type PersonDecision = z.infer<typeof PersonDecision>;
+export const LikenessSource = z.enum(['ADMIN', 'WIKIMEDIA', 'UPLOAD']);
+export type LikenessSource = z.infer<typeof LikenessSource>;
+
+/** One person the read found, with the photo on offer. */
+export const PersonCard = z.object({
+  likenessId: Id,
+  /** As the story names them. */
+  name: z.string(),
+  /** What the story says they are, when the read said. */
+  role: z.string(),
+  /** The name the photo is filed under (Wikidata's label for a Commons photo). */
+  label: z.string(),
+  /** A short description, for example "Indian businessman". */
+  description: z.string().nullable(),
+  photoUrl: z.string().url().nullable(),
+  source: LikenessSource,
+  /** "Wikimedia Commons, CC BY-SA 4.0" for a Commons photo; null otherwise. */
+  sourceLine: z.string().nullable(),
+  /** Who took the photo, as Commons credits them. */
+  author: z.string().nullable(),
+  /** The Commons file page. */
+  sourcePage: z.string().url().nullable(),
+  decision: PersonDecision,
+  /** Whether "Try another" has another match to offer. */
+  canSwap: z.boolean(),
+});
+export type PersonCard = z.infer<typeof PersonCard>;
+
+export const PeopleResponse = z.object({
+  status: RequestStatus,
+  /** True while the request waits for these decisions. */
+  waiting: z.boolean(),
+  people: z.array(PersonCard),
+});
+export type PeopleResponse = z.infer<typeof PeopleResponse>;
 
 // ---- styles --------------------------------------------------------------------------------
 

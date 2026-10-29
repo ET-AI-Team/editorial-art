@@ -9,6 +9,7 @@ import { closeQueues } from './queues/queues';
 import { attachSocketServer, closeSocketServer } from './realtime/socket-server';
 import { adminRouter } from './routes/admin.routes';
 import { optionsRouter } from './routes/options.routes';
+import { peopleRouter } from './routes/people.routes';
 import { requestsRouter } from './routes/requests.routes';
 import { stylesRouter } from './routes/styles.routes';
 import { processLibraryJob } from './workers/library.worker';
@@ -22,7 +23,7 @@ import { startWorkers, stopWorkers } from './workers/index';
 const config = env();
 const role = config.EA_ROLE;
 
-const app = role === 'worker' ? createApp() : createApp({ api: [requestsRouter, optionsRouter, stylesRouter, adminRouter] });
+const app = role === 'worker' ? createApp() : createApp({ api: [requestsRouter, peopleRouter, optionsRouter, stylesRouter, adminRouter] });
 const http = createServer(app);
 if (role !== 'worker') attachSocketServer(http);
 if (role !== 'api') {

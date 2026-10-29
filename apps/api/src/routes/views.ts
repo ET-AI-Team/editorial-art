@@ -39,6 +39,7 @@ export function optionDto(o: Option & { pack: PublishPack | null }, styles: Map<
     failureReason: o.failureReason,
     pack: o.pack ? packDto(o.pack) : null,
     references: o.referenceIds.map((id) => refs.get(id)).filter((r): r is OptionReference => !!r),
+    likenessWeak: o.likenessWeak,
   };
 }
 

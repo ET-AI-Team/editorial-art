@@ -7,6 +7,7 @@ import { failFinal } from './finalize';
 import { failPack } from './pack';
 import { failPreview, settleBatch } from './preview';
 import { emitRequestStatus } from './events';
+import { releaseWhenGateCloses } from './people';
 import { moveRequest } from './state';
 
 /**
@@ -55,6 +56,9 @@ export async function reapOnce(): Promise<number> {
       actions++;
     }
   }
+
+  // Requests waiting on people their creator may no longer have carry on without faces.
+  actions += await releaseWhenGateCloses();
 
   const running = await db.batch.findMany({ where: { status: { in: ['QUEUED', 'RUNNING'] } }, select: { id: true, request: { select: { publicId: true } } } });
   for (const b of running) await settleBatch(b.id, b.request.publicId);

@@ -1,6 +1,7 @@
 import type { BatchPlanEntry, SentImageRole } from '@editorial-art/shared-types';
 import type { StyleView } from '../library/styles';
 import { ruleSummary } from '../library/styles';
+import { realLikenessClause } from './likeness-check';
 import type { PeopleEntry } from './read';
 
 /**
@@ -27,7 +28,7 @@ function peopleClause(input: PreviewPromptInput): string {
     return 'People: no people at all; show the idea through objects, places and light.';
   }
   if (input.peopleMode === 'illustrated' && input.likenessNames.length) {
-    return `People: show ${input.likenessNames.join(' and ')} as illustrated figures in this house style, recognisable from the attached reference photos, dignified and natural, never caricatured or exaggerated.`;
+    return realLikenessClause(input.likenessNames);
   }
   if (input.peopleMode === 'illustrated' || input.peopleMode === 'symbolised') {
     const names = input.direction.peopleDepicted.filter((p) => p.how !== 'absent').map((p) => p.name);

@@ -15,6 +15,7 @@ import { emitBatchSettled, emitOptionFailed, emitPreviewReady } from './events';
 import { cleanEditorPrompt } from './guard/strip';
 import { buildPreviewPrompt, imageLabels } from './prompts';
 import { describeCall, routedImage } from './image-routing';
+import { checkLikeness, LIKENESS_AGAIN, likenessStyle, WeakLikeness } from './likeness-check';
 import { batchOutcome, moveBatch, moveOption } from './state';
 import { checkStory, pickStoryRedraw, redrawWins, storyRedrawNote, type StoryRow } from './story-check';
 
@@ -51,7 +52,7 @@ async function hasWriting(ctx: OptionContext, webp: Buffer, stage = 'preview_che
 export function previewPromptFor(ctx: OptionContext, refCount: number, likenessPhotoCount: number, series: boolean): string {
   const editor = cleanEditorPrompt(ctx.request.prompt);
   return buildPreviewPrompt({
-    style: ctx.style,
+    style: likenessStyle(ctx.style, ctx.likenessNames),
     direction: ctx.direction,
     brief: ctx.brief,
     peopleMode: ctx.entry.peopleMode,
@@ -110,7 +111,7 @@ export async function runPreview(optionId: string): Promise<void> {
   const { previewModel } = await imageModels();
   const stage = redraw ? 'story_redraw' : 'preview';
 
-  let produced: (Awaited<ReturnType<typeof checkImage>> & { model: string; sent: SentImageCall; story: StoryCheck | null }) | undefined;
+  let produced: (Awaited<ReturnType<typeof checkImage>> & { model: string; sent: SentImageCall; story: StoryCheck | null; likenessWeak: boolean }) | undefined;
   let currentPrompt = prompt;
   for (let pass = 0; pass < 2 && !produced; pass++) {
     const request = { stage: 'preview' as const, model: previewModel, imageSize: env().EA_PREVIEW_IMAGE_SIZE, prompt: currentPrompt, images, sources, likenessNames: ctx.likenessNames };
@@ -131,10 +132,12 @@ export async function runPreview(optionId: string): Promise<void> {
         checkStory({ stage: 'story_check', requestId: ctx.request.id, optionId: ctx.option.id }, checked.small, storyInputFor(ctx)),
       ]);
       if (writing.hasText) throw new BadModelOutput(`The image had writing in it (${writing.where || 'somewhere'}).`);
-      produced = { ...checked, model, sent, story };
+      const likenessWeak = await checkLikeness(call, ctx.likenessNames, checked.small, images.slice(refCount, refCount + likenessPhotoCount), pass === 1);
+      produced = { ...checked, model, sent, story, likenessWeak };
     } catch (error) {
       if (!(error instanceof BadModelOutput) || pass === 1) throw error;
       if (/writing/.test(error.message)) currentPrompt = `${prompt}\n\n${NO_TEXT_AGAIN}`;
+      if (error instanceof WeakLikeness) currentPrompt = `${prompt}\n\n${LIKENESS_AGAIN}`;
     }
   }
   maybeCrash('preview');
@@ -168,6 +171,7 @@ export async function runPreview(optionId: string): Promise<void> {
       previewModel: produced!.model,
       previewHash: produced!.hash,
       previewInput: produced!.sent,
+      likenessWeak: produced!.likenessWeak,
       failureReason: null,
       storyScore: story?.storyScore ?? null,
       storyReason: story?.reason || null,

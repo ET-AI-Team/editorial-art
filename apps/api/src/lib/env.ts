@@ -77,6 +77,14 @@ const Schema = z
     EA_PREVIEW_RETENTION_DAYS: int(180, 1),
     EA_CREDIT_LINE: z.string().min(1).max(80).default('AI illustration: ET'),
 
+    /**
+     * Real faces of public figures (pipeline/people.ts): 'off' draws every person symbolically,
+     * 'admins' lets only x-actor-role admin requests find and use them, 'all' lets everyone.
+     */
+    EA_REAL_PEOPLE: z.enum(['off', 'admins', 'all']).default('off'),
+    /** Contact in the User-Agent of every Wikimedia call, as their policy asks: a monitored email or URL. */
+    EA_WIKIMEDIA_CONTACT: z.string().min(3).max(200).default('https://github.com/ET-AI-Team/editorial-art'),
+
     EA_TEST_CRASH_AT: z.string().optional(),
   })
   .superRefine((v, ctx) => {

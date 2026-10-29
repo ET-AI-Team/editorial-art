@@ -21,6 +21,8 @@ datasource db {
 enum RequestStatus {
   RECEIVED
   READING
+  /// Paused after the read: the editor confirms the real people found in the story (pipeline/people.ts).
+  NEEDS_PEOPLE_CONFIRM
   DIRECTIONS_READY
   ACTIVE
   HAS_FINAL
@@ -94,8 +96,31 @@ enum RefStatus {
 }
 
 enum LikenessStatus {
+  /// Found automatically (Wikimedia Commons) and not yet confirmed by an editor. Never sent to a model.
+  CANDIDATE
   ACTIVE
   RETIRED
+}
+
+/// Where a likeness photo came from.
+enum LikenessSource {
+  /// Uploaded by an admin with a consent note (POST /admin/likenesses).
+  ADMIN
+  /// The Wikidata image (P18) of a public figure, from Wikimedia Commons, credited in the pack.
+  WIKIMEDIA
+  /// A photo an editor uploaded while confirming the people in a story.
+  UPLOAD
+}
+
+/// What the editor chose for one real person in one request.
+enum PersonDecision {
+  PENDING
+  /// Use the likeness shown; it becomes ACTIVE for everyone.
+  USE
+  /// Use a photo the editor uploaded; a new ACTIVE likeness.
+  UPLOAD
+  /// No likeness for this request: the person is shown symbolically.
+  SYMBOLIC
 }
 
 enum AttemptResult {
@@ -114,6 +139,8 @@ model Request {
   callerKeyId       String
   actorUserId       String
   actorWorkspaceId  String
+  /// The x-actor-role of the creator, for the real-people gate (EA_REAL_PEOPLE).
+  actorRole         String        @default("member")
   clientRef         String?
   status            RequestStatus @default(RECEIVED)
   failureCode       String?
@@ -143,6 +170,7 @@ model Request {
   briefs  Brief[]
   batches Batch[]
   options Option[]
+  people  RequestPerson[]
 
   @@unique([callerKeyId, clientRef])
   @@index([actorWorkspaceId, createdAt(sort: Desc)])
@@ -258,6 +286,8 @@ model Option {
   storyRedraws    Int         @default(0)
   blockedReason   String?
   failureReason   String?
+  /// The drawn face still looked unlike the reference photos after one redraw.
+  likenessWeak    Boolean     @default(false)
   picked          Boolean     @default(false)
   pickedAt        DateTime?   @db.Timestamptz(3)
   createdAt       DateTime    @default(now()) @db.Timestamptz(3)
@@ -375,8 +405,52 @@ model Likeness {
   consentNote String
   approvedBy  String
   status      LikenessStatus @default(ACTIVE)
+  source      LikenessSource @default(ADMIN)
+  /// The Wikidata item (Q-id) of a WIKIMEDIA likeness.
+  wikidataId  String?
+  /// Wikidata's short description, for example "Indian businessman".
+  description String?
+  /// The Commons file page the photo came from.
+  commonsPage String?
+  /// LicenseShortName from Commons, for example "CC BY-SA 4.0".
+  licence     String?
+  licenceUrl  String?
+  /// The photographer or author as Commons names them (Artist), as plain text.
+  credit      String?
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  requestPeople RequestPerson[]
+
+  @@index([wikidataId])
+  @@index([status])
+}
+
+/// A real person the read found in one request, while the editor confirms how to show them.
+model RequestPerson {
+  id         String         @id @default(uuid())
+  requestId  String
+  request    Request        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  /// The name as the story gives it.
+  name       String
+  /// Other names in the story that matched the same person.
+  otherNames String[]       @default([])
+  /// The role the read gave, for example "chairman, Tata Sons".
+  role       String         @default("")
+  /// The likeness on offer (CANDIDATE or ACTIVE), or the one chosen.
+  likenessId String?
+  likeness   Likeness?      @relation(fields: [likenessId], references: [id])
+  /// Ranked Wikidata candidates not shown yet, for "Try another": [{ wikidataId, label, description, imageFile, score }].
+  candidates Json           @default("[]")
+  /// Wikidata ids already shown in this request.
+  tried      String[]       @default([])
+  decision   PersonDecision @default(PENDING)
+  decidedBy  String?
+  decidedAt  DateTime?      @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@unique([requestId, name])
+  @@index([likenessId])
 }
 
 /// One paid model call, success or not.

@@ -265,6 +265,8 @@ function fakeAnswer(p: ChatJsonParams): unknown {
       return { hasText: false, where: '' };
     case 'reader_test':
       return fakeReader(p.user);
+    case 'likeness_check':
+      return { likeness: 'good', notes: '' };
     case 'photo_advice':
       if (p.user.includes('FAKE_BAD_JSON')) return { suggestPhoto: 'maybe' };
       return p.user.includes('FAKE_PHOTO')

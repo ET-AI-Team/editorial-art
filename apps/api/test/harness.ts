@@ -10,6 +10,7 @@ import { closeQueues } from '../src/queues/queues';
 import { attachSocketServer, closeSocketServer } from '../src/realtime/socket-server';
 import { adminRouter } from '../src/routes/admin.routes';
 import { optionsRouter } from '../src/routes/options.routes';
+import { peopleRouter } from '../src/routes/people.routes';
 import { requestsRouter } from '../src/routes/requests.routes';
 import { stylesRouter } from '../src/routes/styles.routes';
 import { startWorkers, stopWorkers } from '../src/workers/index';
@@ -39,7 +40,7 @@ export async function startHarness(): Promise<Harness> {
   await redis().flushdb();
   const fake = createFakeProviders();
   setProviders(fake);
-  const app = createApp({ api: [requestsRouter, optionsRouter, stylesRouter, adminRouter] });
+  const app = createApp({ api: [requestsRouter, peopleRouter, optionsRouter, stylesRouter, adminRouter] });
   const server = createServer(app);
   attachSocketServer(server);
   startWorkers(processLibraryJob);

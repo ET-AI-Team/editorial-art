@@ -33,6 +33,7 @@ import { enqueue } from '../queues/queues';
 import { listItem, requestDetail } from './views';
 import { ESTIMATE_INR } from '../lib/pricing';
 import { previewEstimateInr } from '../lib/settings';
+import { realPeopleAllowed } from '../lib/real-people';
 
 export const requestsRouter = Router();
 
@@ -125,6 +126,7 @@ requestsRouter.post(
         callerKeyId: req.callerKeyId!,
         actorUserId: actor.userId,
         actorWorkspaceId: actor.workspaceId,
+        actorRole: actor.role,
         clientRef: body.clientRef ?? null,
         articleTitle: article.title,
         articleText: article.text,
@@ -229,6 +231,7 @@ requestsRouter.post(
       requestId: row.id,
       kind: body.kind,
       requestedBy: actor.userId,
+      realPeople: realPeopleAllowed(actor.role),
       ...(body.kind === 'ANOTHER_STYLE' ? { styleId: body.styleId, pinnedReferenceId: body.pinnedReferenceId, referenceIds: body.referenceIds } : {}),
       ...(body.kind === 'MORE' ? { fromOptionId: body.fromOptionId, fromBatchId: body.fromBatchId } : {}),
       ...(body.kind === 'SERIES_MATCH' ? { seriesOfRequestId: body.seriesOfRequestId } : {}),

@@ -50,11 +50,40 @@ describe('style library seed', () => {
     expect(StyleLibrarySeed.safeParse(oldFamily).success).toBe(false);
   });
 
-  test('photoreal styles show objects only and never allow real people; no style allows real people yet', () => {
+  test('photoreal styles show objects only and never allow real people; only illustrated styles allow real people', () => {
     const photoreal = seed.styles.filter((s) => s.safety.photoreal).map((s) => s.slug);
     expect(photoreal.sort()).toEqual(['cinematic-3d', 'photo-montage', 'still-life']);
     for (const style of seed.styles.filter((s) => s.safety.photoreal)) expect(style.safety.allowsPeople).toBe(false);
-    for (const style of seed.styles) expect(style.safety.allowsRealPeople).toBe(false);
+    const realPeople = seed.styles.filter((s) => s.safety.allowsRealPeople).map((s) => s.slug);
+    expect(realPeople.sort()).toEqual(
+      [
+        'gouache',
+        'digital-painterly',
+        'watercolour',
+        'charcoal',
+        'ink-wash',
+        'naive-crayon',
+        'clean-line-comic',
+        'bold-comic',
+        'loose-cartoon',
+        'editorial-cartoon',
+        'paper-cut',
+        'etching',
+        'kalighat',
+        'contemporary-miniature',
+      ].sort()
+    );
+    for (const style of seed.styles.filter((s) => s.safety.allowsRealPeople)) {
+      expect(style.safety.allowsPeople).toBe(true);
+      expect(style.safety.photoreal).toBe(false);
+    }
+  });
+
+  test('the at-a-glance table shows the same real-people flag as the seed', () => {
+    for (const style of seed.styles) {
+      const row = LIBRARY.split('\n').find((line) => line.includes(`| \`${style.slug}\` |`));
+      expect(row?.split('|').map((c) => c.trim())[6]).toBe(style.safety.allowsRealPeople ? 'yes' : 'no');
+    }
   });
 
   test('every style has the three base donts and says no text, letters, numbers or logos', () => {

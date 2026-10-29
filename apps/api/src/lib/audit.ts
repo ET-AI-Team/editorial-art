@@ -15,6 +15,8 @@ export type AuditAction =
   | 'likeness.create'
   | 'likeness.update'
   | 'likeness.use'
+  | 'people.pause'
+  | 'people.decision'
   | 'spend.cap_reached'
   | 'setting.image_models';
 

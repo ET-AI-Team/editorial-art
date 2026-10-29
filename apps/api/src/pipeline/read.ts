@@ -14,6 +14,7 @@ import { emitRequestStatus } from './events';
 import { runReaderTest, type ReaderVerdict } from './reader-test';
 import { finalSensitivity, fold, sensitivityFloor } from './guard/sensitivity';
 import { stripInstructions } from './guard/strip';
+import { activeLikenessNames, pauseForPeople, realFacesNote } from './people';
 import { moveRequest } from './state';
 import { READ_SYSTEM_PROMPT } from './system-prompts';
 
@@ -153,7 +154,7 @@ export async function runRead(requestId: string): Promise<void> {
   const chosen = request.styleId ? (styles.find((s) => s.id === request.styleId) ?? null) : null;
   if (request.styleId && !chosen) return fail(request.id, request.publicId, 'STYLE_NOT_LIVE', 'The chosen style is not available any more.');
 
-  const likenesses = await db.likeness.findMany({ where: { status: 'ACTIVE' }, select: { id: true, name: true, aliases: true } });
+  const likenesses = await activeLikenessNames(request.actorRole);
   const forRead = textForRead(request.articleText);
 
   let answer: ReadOutput | undefined;
@@ -166,7 +167,7 @@ export async function runRead(requestId: string): Promise<void> {
           kind: 'read',
           model: env().EA_READ_MODEL,
           system: READ_SYSTEM_PROMPT,
-          user: buildReadUserMessage({
+          user: realFacesNote(request.actorRole) + buildReadUserMessage({
             styles,
             chosenStyle: chosen,
             likenesses,
@@ -273,6 +274,7 @@ export async function runRead(requestId: string): Promise<void> {
     await tx.request.update({ where: { id: request.id }, data: { sensitivity: level } });
   });
 
+  if (await pauseForPeople(request.id)) return;
   if (!(await moveRequest(request.id, 'DIRECTIONS_READY', {}, ['READING']))) return;
   emitRequestStatus(request.publicId, 'DIRECTIONS_READY', { directionsReady: true });
 

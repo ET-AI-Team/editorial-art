@@ -34,6 +34,8 @@ export interface CreateBatchInput {
   pinnedReferenceId?: string;
   /** ANOTHER_STYLE only; INITIAL takes the request's own choice, MORE its source batch's. */
   referenceIds?: string[];
+  /** False when the asking actor may not have real faces now (EA_REAL_PEOPLE): no likeness goes with any option. */
+  realPeople?: boolean;
 }
 
 export const NOT_THIS_STYLE = "These references don't belong to this style.";
@@ -221,7 +223,8 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
   for (const [index, slot] of slots.entries()) {
     const direction = directions.find((x) => x.id === slot.directionId)!;
     const people = peopleFor(direction.peopleDepicted, styles.get(slot.styleId)!, level);
-    const entry = { index, directionId: slot.directionId, styleId: slot.styleId, likenessIds: people.likenessIds, peopleMode: people.mode, seriesSourceOptionId };
+    const likenessIds = input.realPeople === false ? [] : people.likenessIds;
+    const entry = { index, directionId: slot.directionId, styleId: slot.styleId, likenessIds, peopleMode: people.mode, seriesSourceOptionId };
     if (chosenRefs) {
       // The editor's choice: exactly these, in this order, with no embedding or artist pick.
       entries.push({ ...entry, referenceIds: chosenRefs });
