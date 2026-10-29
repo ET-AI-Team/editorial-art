@@ -1,5 +1,5 @@
 import type { BatchPlanEntry, SentImage } from '@editorial-art/shared-types';
-import { BatchPlan } from '@editorial-art/shared-types';
+import { BatchPlan, ReadHook } from '@editorial-art/shared-types';
 import { db } from '../lib/db';
 import { styleById, type StyleView } from '../library/styles';
 import { providers, type ImageData } from '../providers';
@@ -8,10 +8,11 @@ import type { PeopleEntry } from './read';
 /** Everything a preview or a final needs about one option, loaded once. */
 export interface OptionContext {
   option: NonNullable<Awaited<ReturnType<typeof loadOption>>>;
-  request: { id: string; publicId: string; status: string; prompt: string | null; actorUserId: string };
+  request: { id: string; publicId: string; status: string; prompt: string | null; actorUserId: string; title: string | null };
   batch: { id: string; status: string; promptDropped: boolean };
-  brief: { tone: string; desk: string; thesis: string; altTextSeed: string };
-  direction: { id: string; title: string; idea: string; avoid: string[]; peopleDepicted: PeopleEntry[] };
+  /** `hook` is null for briefs read before it existed. */
+  brief: { tone: string; desk: string; thesis: string; altTextSeed: string; headline: string; hook: ReadHook | null };
+  direction: { id: string; title: string; idea: string; avoid: string[]; peopleDepicted: PeopleEntry[]; mustShow: string[] };
   style: StyleView;
   entry: BatchPlanEntry;
   likenessNames: string[];
@@ -35,10 +36,10 @@ export async function loadOptionContext(optionId: string): Promise<OptionContext
   const likenesses = entry.likenessIds.length ? await db.likeness.findMany({ where: { id: { in: entry.likenessIds }, status: 'ACTIVE' } }) : [];
   return {
     option,
-    request: { id: option.request.id, publicId: option.request.publicId, status: option.request.status, prompt: option.request.prompt, actorUserId: option.request.actorUserId },
+    request: { id: option.request.id, publicId: option.request.publicId, status: option.request.status, prompt: option.request.prompt, actorUserId: option.request.actorUserId, title: option.request.articleTitle },
     batch: { id: option.batch.id, status: option.batch.status, promptDropped: plan.promptDropped },
-    brief: { tone: brief.tone, desk: brief.desk, thesis: brief.thesis, altTextSeed: brief.altTextSeed },
-    direction: { id: direction.id, title: direction.title, idea: direction.idea, avoid: direction.avoid, peopleDepicted: direction.peopleDepicted as unknown as PeopleEntry[] },
+    brief: { tone: brief.tone, desk: brief.desk, thesis: brief.thesis, altTextSeed: brief.altTextSeed, headline: brief.headline, hook: ReadHook.safeParse(brief.hook).data ?? null },
+    direction: { id: direction.id, title: direction.title, idea: direction.idea, avoid: direction.avoid, peopleDepicted: direction.peopleDepicted as unknown as PeopleEntry[], mustShow: direction.mustShow },
     style,
     entry,
     likenessNames: likenesses.map((l) => l.name),

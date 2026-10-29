@@ -10,8 +10,10 @@ import type { PeopleEntry } from './read';
 
 export interface PreviewPromptInput {
   style: StyleView;
-  direction: { title: string; idea: string; avoid: string[]; peopleDepicted: PeopleEntry[] };
-  brief: { tone: string; desk: string };
+  /** `mustShow` is empty or absent for directions read before it existed. */
+  direction: { title: string; idea: string; avoid: string[]; peopleDepicted: PeopleEntry[]; mustShow?: string[] };
+  /** `hook` is null or absent for briefs read before it existed. */
+  brief: { tone: string; desk: string; hook?: { tension: string; indianContext: string } | null };
   peopleMode: BatchPlanEntry['peopleMode'];
   likenessNames: string[];
   editorPrompt: string | null;
@@ -51,9 +53,14 @@ const CRAFT_POINTS =
 export const CRAFT_BLOCK = `Craft: Style fidelity to the references comes first. ${CRAFT_POINTS}`;
 const CRAFT_BLOCK_NO_REFS = `Craft: ${CRAFT_POINTS}`;
 
-/** Leads every prompt that has references, because image models weigh words over pictures. */
+/**
+ * Follows the story in every prompt that has references: the story decides what is shown, the
+ * references decide how it is drawn.
+ */
 export const STYLE_REFERENCES_BLOCK =
-  'STYLE REFERENCES: The attached reference images, all by working illustrators, define the visual style. Match them as closely as possible in rendering technique, colour palette and background colour, texture and grain, shading, shape language, line or no-line, and level of detail. They override any colour or style detail described in words below. Do not copy their subjects or compositions: draw the new scene described below.';
+  'STYLE REFERENCES: The attached reference images, all by working illustrators, define the visual style. Match them as closely as possible in rendering technique, colour palette and background colour, texture and grain, shading, shape language, line or no-line, and level of detail. They override any colour or style detail described in words. They set the rendering, palette and texture, and they never change what is shown: do not copy their subjects or compositions; draw the story above.';
+
+export const STORY_HEADING = 'THE STORY (must be clear at thumbnail size):';
 
 function rulesBlock(input: PreviewPromptInput): string {
   const photo = input.style.safety.photoreal;
@@ -64,8 +71,19 @@ function rulesBlock(input: PreviewPromptInput): string {
   }\nDo not depict any real news event as if it were photographed.`;
 }
 
-function sceneBlock(input: PreviewPromptInput): string {
-  return `Scene: ${input.direction.idea}\nFocal point: ${input.direction.title}.\nMood: ${input.brief.tone}, suited to a ${input.brief.desk} story.`;
+/** What the image must show, first in every prompt: the idea, its concrete elements, the tension, the place. */
+function storyBlock(input: PreviewPromptInput): string {
+  const must = input.direction.mustShow?.filter(Boolean) ?? [];
+  const hook = input.brief.hook;
+  return [
+    `${STORY_HEADING} ${input.direction.idea}`,
+    must.length ? `Must show, the first as the focal point:\n${must.map((m) => `- ${m}`).join('\n')}` : `Focal point: ${input.direction.title}.`,
+    hook?.tension ? `The tension to make visible: ${hook.tension}.` : '',
+    hook?.indianContext ? `Indian context: ${hook.indianContext}.` : '',
+    `Mood: ${input.brief.tone}, suited to a ${input.brief.desk} story.`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function editorBlock(input: PreviewPromptInput): string {
@@ -82,30 +100,21 @@ function otherAttachments(input: PreviewPromptInput): string {
     .join('\n');
 }
 
+/**
+ * Content first, then style, then craft, then rules: the story and who may appear, the editor's
+ * ask, the references (or the style in words), the craft bar, the rules and the avoid list.
+ */
 export function buildPreviewPrompt(input: PreviewPromptInput): string {
   const avoid = `Avoid: ${[input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ')}.`;
-  if (input.refCount) {
-    // References lead: the style instruction first, then the scene, the craft, and the rules.
-    return [
-      STYLE_REFERENCES_BLOCK,
-      sceneBlock(input),
-      `Technique in words (the references win wherever they differ): ${input.style.ruleSheet.promptCore}`,
-      peopleClause(input),
-      CRAFT_BLOCK,
-      editorBlock(input),
-      rulesBlock(input),
-      avoid,
-      otherAttachments(input),
-    ]
-      .filter(Boolean)
-      .join('\n\n');
-  }
+  const style = input.refCount
+    ? [STYLE_REFERENCES_BLOCK, `Technique in words (the references win wherever they differ): ${input.style.ruleSheet.promptCore}`]
+    : [`Style: ${input.style.ruleSheet.promptCore}`];
   return [
-    input.style.ruleSheet.promptCore,
-    sceneBlock(input),
+    storyBlock(input),
     peopleClause(input),
-    CRAFT_BLOCK_NO_REFS,
     editorBlock(input),
+    ...style,
+    input.refCount ? CRAFT_BLOCK : CRAFT_BLOCK_NO_REFS,
     rulesBlock(input),
     avoid,
     otherAttachments(input),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildFinalPrompt, buildJudgeUser, buildPreviewPrompt, CRAFT_BLOCK, FINAL_WITH_REFERENCES, imageLabels, STYLE_REFERENCES_BLOCK, type PreviewPromptInput } from './prompts';
+import { buildFinalPrompt, buildJudgeUser, buildPreviewPrompt, CRAFT_BLOCK, FINAL_WITH_REFERENCES, imageLabels, STORY_HEADING, STYLE_REFERENCES_BLOCK, type PreviewPromptInput } from './prompts';
 import { JUDGE_SYSTEM_PROMPT, READ_SYSTEM_PROMPT } from './system-prompts';
 
 const style = (photoreal: boolean, allowsPeople = true, slug = photoreal ? 'still-life' : 'ink-wash') =>
@@ -16,8 +16,14 @@ const style = (photoreal: boolean, allowsPeople = true, slug = photoreal ? 'stil
 
 const base: PreviewPromptInput = {
   style: style(false),
-  direction: { title: 'Two kings', idea: 'Two chess kings face each other.', avoid: ['no flags'], peopleDepicted: [] },
-  brief: { tone: 'analytical', desk: 'markets' },
+  direction: {
+    title: 'Two kings',
+    idea: 'Two hands pull the long Bombay House boardroom table apart.',
+    avoid: ['no flags'],
+    peopleDepicted: [],
+    mustShow: ["Tata Sons' Bombay House facade", 'two hands pulling a boardroom table apart'],
+  },
+  brief: { tone: 'analytical', desk: 'markets', hook: { tension: 'battle for control', indianContext: 'Bombay House, Mumbai' } },
   peopleMode: 'none',
   likenessNames: [],
   editorPrompt: null,
@@ -27,20 +33,52 @@ const base: PreviewPromptInput = {
 };
 
 describe('image prompts', () => {
-  test('with references, the style instruction leads, then the scene, the craft and the rules', () => {
+  test('the story leads, then the style references, then the craft, then the rules', () => {
     const p = buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' });
-    expect(p.startsWith('STYLE REFERENCES: The attached reference images, all by working illustrators, define the visual style.')).toBe(true);
-    expect(p).toContain('They override any colour or style detail described in words below. Do not copy their subjects or compositions: draw the new scene described below.');
-    const order = ['STYLE REFERENCES', 'Scene: Two chess kings', 'An editorial illustration in loose ink', 'Craft:', 'The editor also asks', 'Rules that always apply', 'Avoid:'].map((s) => p.indexOf(s));
+    expect(p.startsWith(`${STORY_HEADING} Two hands pull the long Bombay House boardroom table apart.`)).toBe(true);
+    const order = [
+      'THE STORY (must be clear at thumbnail size)',
+      "- Tata Sons' Bombay House facade",
+      'The tension to make visible: battle for control.',
+      'Indian context: Bombay House, Mumbai.',
+      'People:',
+      'The editor also asks',
+      'STYLE REFERENCES',
+      'An editorial illustration in loose ink',
+      'Craft:',
+      'Rules that always apply',
+      'Avoid:',
+    ].map((s) => p.indexOf(s));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(p).toContain('no text, letters, numbers');
     expect(p).toContain('Avoid: photograph, neon, no flags.');
   });
 
-  test('without references the style core opens the prompt, as before, and nothing mentions references', () => {
+  test('the story block lists what to show, the focal subject first, as bullets', () => {
+    const p = buildPreviewPrompt(base);
+    expect(p).toContain("Must show, the first as the focal point:\n- Tata Sons' Bombay House facade\n- two hands pulling a boardroom table apart");
+    expect(p).toContain('Mood: analytical, suited to a markets story.');
+  });
+
+  test('the references set rendering, palette and texture and never change what is shown', () => {
+    expect(STYLE_REFERENCES_BLOCK).toContain('They set the rendering, palette and texture, and they never change what is shown');
+    expect(STYLE_REFERENCES_BLOCK).toContain('Match them as closely as possible in rendering technique, colour palette');
+    expect(STYLE_REFERENCES_BLOCK).toContain('draw the story above');
+  });
+
+  test('a direction or brief read before the hook existed still gets a story block, with its title as the focal point', () => {
+    const p = buildPreviewPrompt({ ...base, direction: { title: 'Two kings', idea: 'Two chess kings face each other.', avoid: [], peopleDepicted: [] }, brief: { tone: 'analytical', desk: 'markets' } });
+    expect(p.startsWith(`${STORY_HEADING} Two chess kings face each other.\nFocal point: Two kings.`)).toBe(true);
+    expect(p).not.toContain('Must show');
+    expect(p).not.toContain('The tension to make visible');
+    expect(p).not.toContain('Indian context');
+  });
+
+  test('without references the story still leads, the style core follows, and nothing mentions references', () => {
     const p = buildPreviewPrompt({ ...base, refCount: 0, editorPrompt: 'keep it dignified' });
-    expect(p.startsWith('An editorial illustration in loose ink')).toBe(true);
+    expect(p.startsWith(STORY_HEADING)).toBe(true);
+    expect(p.indexOf('Style: An editorial illustration in loose ink')).toBeGreaterThan(p.indexOf('Must show'));
     expect(p).not.toContain(STYLE_REFERENCES_BLOCK);
     expect(p).not.toMatch(/references/i);
     expect(p.indexOf('The editor also asks')).toBeLessThan(p.indexOf('Rules that always apply'));
@@ -64,6 +102,14 @@ describe('image prompts', () => {
   test('illustrated people only with likeness photos; otherwise symbolised', () => {
     expect(buildPreviewPrompt({ ...base, peopleMode: 'illustrated', likenessNames: ['Asha Rao'], likenessPhotoCount: 2 })).toContain('show Asha Rao as illustrated figures');
     expect(buildPreviewPrompt({ ...base, peopleMode: 'symbolised', direction: { ...base.direction, peopleDepicted: [{ name: 'Asha Rao', how: 'symbolised', likenessId: null }] } })).toContain("do not show anyone's face");
+  });
+
+  test('a final carries the same story-first prompt after its recreate instruction', () => {
+    const preview = buildPreviewPrompt(base);
+    const p = buildFinalPrompt(preview, { refCount: 3 });
+    expect(p).toContain(preview);
+    expect(p.indexOf('Recreate the first attached image')).toBeLessThan(p.indexOf(STORY_HEADING));
+    expect(p.indexOf(STORY_HEADING)).toBeLessThan(p.indexOf('STYLE REFERENCES'));
   });
 
   test('the final prompt keeps the preview and adds a fix note when retrying', () => {
@@ -104,7 +150,7 @@ describe('image prompts', () => {
 
   test('prompts stay tight', () => {
     expect(CRAFT_BLOCK.length).toBeLessThanOrEqual(600);
-    expect(buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' }).length).toBeLessThanOrEqual(2_400);
+    expect(buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' }).length).toBeLessThanOrEqual(2_800);
     expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(8_000);
   });
 
