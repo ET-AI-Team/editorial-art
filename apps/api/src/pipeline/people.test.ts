@@ -179,7 +179,9 @@ describe('rules', () => {
     const style = (slug: string, safety: Partial<{ allowsPeople: boolean; allowsRealPeople: boolean; photoreal: boolean }> = {}) => ({ slug, safety: { allowsPeople: true, allowsRealPeople: true, photoreal: false, ...safety } });
     expect(realFacesAllowedFor(style('gouache'), 'NONE')).toBe(true);
     expect(realFacesAllowedFor(style('gouache'), 'ELEVATED')).toBe(false);
-    expect(realFacesAllowedFor(style('editorial-cartoon'), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('bold-comic'), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('caricature'), 'NONE')).toBe(true);
+    expect(realFacesAllowedFor(style('caricature'), 'ELEVATED')).toBe(false);
     expect(realFacesAllowedFor(style('kalighat'), 'NONE')).toBe(false);
     expect(realFacesAllowedFor(style('still-life', { photoreal: true, allowsRealPeople: false }), 'NONE')).toBe(false);
     expect(realFacesAllowedFor(style('watercolour', { allowsRealPeople: false }), 'NONE')).toBe(false);

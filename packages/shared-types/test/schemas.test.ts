@@ -66,7 +66,7 @@ describe('style library seed', () => {
         'clean-line-comic',
         'bold-comic',
         'loose-cartoon',
-        'editorial-cartoon',
+        'caricature',
         'paper-cut',
         'etching',
         'kalighat',

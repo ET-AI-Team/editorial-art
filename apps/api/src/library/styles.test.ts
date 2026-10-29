@@ -38,7 +38,7 @@ describe('style library', () => {
 
   test('sensitivity decides which styles are allowed', async () => {
     const styles = new Map((await db.style.findMany()).map((s) => [s.slug, { slug: s.slug, safety: s.safety as never }]));
-    for (const slug of ['editorial-cartoon', 'kalighat', 'clay-set', 'bold-comic']) {
+    for (const slug of ['caricature', 'kalighat', 'clay-set', 'bold-comic']) {
       expect(styleAllowed(styles.get(slug)!, 'NONE')).toBe(true);
       expect(styleAllowed(styles.get(slug)!, 'ELEVATED')).toBe(false);
     }

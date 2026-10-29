@@ -258,6 +258,8 @@ export interface ArtworkPassOptions {
    * References only set the look, and a drawn likeness of a real, identifiable person still fails.
    */
   allowPeoplePhotos?: boolean;
+  /** Let drawn likenesses of public figures through, for the caricature style whose references are exactly that. */
+  allowDrawnLikeness?: boolean;
 }
 
 /**
@@ -272,7 +274,7 @@ export function artworkPasses(s: ArtworkScreen, opts: ArtworkPassOptions = {}): 
     !s.hasLogoOrWatermark &&
     !s.hasSignature &&
     (opts.allowPeoplePhotos || !s.isPhotoOfRealPerson) &&
-    !s.depictsRecognizablePerson &&
+    (opts.allowDrawnLikeness || !s.depictsRecognizablePerson) &&
     !s.hasLicensedCharacterOrBrand &&
     !s.explicitOrGory &&
     !s.isAiGeneratedLooking

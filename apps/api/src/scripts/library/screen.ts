@@ -2,7 +2,7 @@
  * Screens collected artworks against their style and describes the ones worth keeping.
  *
  *   bun run library:screen -- --dir <collect output dir> [--research <file or dir>] [--max-inr 3000] [--style <slug>]
- *                             [--max-per-artist 8] [--max-per-style 24] [--min-on-style 7] [--allow-people-photos]
+ *                             [--max-per-artist 8] [--max-per-style 24] [--min-on-style 7] [--allow-people-photos] [--allow-drawn-likeness]
  *
  * Reads <dir>/collect-manifest.json. Each image gets one vision call (gpt-4.1, the judge model)
  * that scores it against the style's rule sheet and flags writing, logos, signatures, real
@@ -130,6 +130,7 @@ async function main(): Promise<void> {
     'max-per-style': 'string',
     'min-on-style': 'string',
     'allow-people-photos': 'boolean',
+    'allow-drawn-likeness': 'boolean',
   });
   if (!flags.dir) throw new Error('Pass --dir <collect output directory>.');
   const dir = String(flags.dir);
@@ -140,7 +141,7 @@ async function main(): Promise<void> {
   const perStyle = capFlag(flags['max-per-style'], '--max-per-style', DEFAULT_PER_STYLE);
   const minOnStyle = flags['min-on-style'] === undefined ? 7 : Number(flags['min-on-style']);
   if (!Number.isFinite(minOnStyle) || minOnStyle < 5 || minOnStyle > 10) throw new Error('--min-on-style must be 5 to 10.');
-  const passOpts = { minOnStyle, allowPeoplePhotos: flags['allow-people-photos'] === true };
+  const passOpts = { minOnStyle, allowPeoplePhotos: flags['allow-people-photos'] === true, allowDrawnLikeness: flags['allow-drawn-likeness'] === true };
 
   const collected = readJson<CollectEntry[]>(join(dir, COLLECT_MANIFEST), []).filter((e) => !flags.style || e.style === flags.style);
   if (!collected.length) throw new Error(`No images in ${join(dir, COLLECT_MANIFEST)}${flags.style ? ` for ${flags.style}` : ''}.`);
