@@ -1,3 +1,4 @@
+import { realFacesAllowedFor } from './guard/sensitivity';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { PeopleResponse, RequestDetail, type SentImageCall } from '@editorial-art/shared-types';
 import sharp from 'sharp';
@@ -170,8 +171,18 @@ describe('rules', () => {
     expect(realFacesNote('admin')).toBe('');
   });
 
-  test('faces are blocked on sensitive stories', () => {
-    expect(['NONE', 'ELEVATED', 'HIGH', 'BLOCKED', null].map((l) => realFacesAllowedAt(l as never))).toEqual([true, true, false, false, false]);
+  test('faces are blocked on sensitive stories, courts and arrests included', () => {
+    expect(['NONE', 'ELEVATED', 'HIGH', 'BLOCKED', null].map((l) => realFacesAllowedAt(l as never))).toEqual([true, false, false, false, false]);
+  });
+
+  test('faces only in illustrated, non-satire styles on stories with no sensitivity', () => {
+    const style = (slug: string, safety: Partial<{ allowsPeople: boolean; allowsRealPeople: boolean; photoreal: boolean }> = {}) => ({ slug, safety: { allowsPeople: true, allowsRealPeople: true, photoreal: false, ...safety } });
+    expect(realFacesAllowedFor(style('gouache'), 'NONE')).toBe(true);
+    expect(realFacesAllowedFor(style('gouache'), 'ELEVATED')).toBe(false);
+    expect(realFacesAllowedFor(style('editorial-cartoon'), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('kalighat'), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('still-life', { photoreal: true, allowsRealPeople: false }), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('watercolour', { allowsRealPeople: false }), 'NONE')).toBe(false);
   });
 
   test('only public adults drawn with a face in the first batch are confirmed', () => {

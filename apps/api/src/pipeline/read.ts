@@ -12,7 +12,7 @@ import { chat, maybeCrash } from './ai';
 import { createBatch } from './batches';
 import { emitRequestStatus } from './events';
 import { runReaderTest, type ReaderVerdict } from './reader-test';
-import { finalSensitivity, fold, sensitivityFloor } from './guard/sensitivity';
+import { finalSensitivity, fold, realFacesAllowedFor, sensitivityFloor } from './guard/sensitivity';
 import { stripInstructions } from './guard/strip';
 import { activeLikenessNames, pauseForPeople, realFacesNote } from './people';
 import { moveRequest } from './state';
@@ -97,7 +97,7 @@ export function applyPeoplePolicy(
   return direction.peopleDepicted.map((p) => {
     const isMinor = minors.has(fold(p.name).trim());
     if (isMinor || p.how === 'absent') return { name: p.name, how: 'absent' as const, likenessId: null };
-    if (level === 'HIGH' || !style.safety.allowsRealPeople || p.how === 'symbolised') {
+    if (!realFacesAllowedFor(style, level) || p.how === 'symbolised') {
       return { name: p.name, how: 'symbolised' as const, likenessId: null };
     }
     return { name: p.name, how: 'illustrated' as const, likenessId: matchLikeness(p.name, likenesses) };

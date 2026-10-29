@@ -8,6 +8,7 @@ import { stylesByIds, styleAllowed, type StyleView } from '../library/styles';
 import { enqueue } from '../queues/queues';
 import { embedText } from './ai';
 import { emitBatchCreated, emitRequestStatus } from './events';
+import { realFacesAllowedFor } from './guard/sensitivity';
 import { moveRequest } from './state';
 import type { PeopleEntry } from './read';
 
@@ -120,7 +121,7 @@ export function planSlots(
 
 /** People mode for one option, re-checked against the option's actual style. */
 export function peopleFor(people: PeopleEntry[], style: StyleView, level: SensitivityLevel): { mode: BatchPlanEntry['peopleMode']; likenessIds: string[] } {
-  const effective = people.map((p) => (p.how === 'illustrated' && (!style.safety.allowsRealPeople || level === 'HIGH') ? { ...p, how: 'symbolised' as const } : p));
+  const effective = people.map((p) => (p.how === 'illustrated' && !realFacesAllowedFor(style, level) ? { ...p, how: 'symbolised' as const } : p));
   const likenessIds = effective.filter((p) => p.how === 'illustrated' && p.likenessId).map((p) => p.likenessId!).slice(0, 2);
   const mode = effective.some((p) => p.how === 'illustrated') ? 'illustrated' : effective.some((p) => p.how === 'symbolised') ? 'symbolised' : 'none';
   return { mode, likenessIds };

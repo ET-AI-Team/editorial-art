@@ -15,7 +15,7 @@ import { commonsImage, downloadCommonsImage, resolvePerson, type Candidate, type
 import { providers } from '../providers';
 import { createBatch, planSlots } from './batches';
 import { emitRequestStatus } from './events';
-import { fold } from './guard/sensitivity';
+import { fold, realFacesAllowedFor } from './guard/sensitivity';
 import type { PeopleEntry } from './read';
 import { moveRequest } from './state';
 
@@ -42,7 +42,7 @@ const Candidates = z.array(z.object({ wikidataId: z.string(), label: z.string(),
 
 /** Faces are never drawn for a sensitive story (the same line the people policy in read.ts draws). */
 export function realFacesAllowedAt(level: SensitivityLevel | null | undefined): boolean {
-  return level === 'NONE' || level === 'ELEVATED';
+  return level === 'NONE';
 }
 
 /** The ACTIVE likenesses the read may match names against: none unless the gate lets this actor have faces. */
@@ -184,7 +184,7 @@ export async function pauseForPeople(requestId: string): Promise<boolean> {
 
   const directions = brief.directions.map((d) => ({ ...d, peopleDepicted: d.peopleDepicted as unknown as PeopleEntry[] }));
   const styles = await stylesByIds(directions.map((d) => d.suggestedStyleId));
-  const realPeopleStyles = new Set([...styles.values()].filter((s) => s.safety.allowsRealPeople && !s.safety.photoreal && s.safety.allowsPeople).map((s) => s.id));
+  const realPeopleStyles = new Set([...styles.values()].filter((s) => realFacesAllowedFor(s, brief.sensitivity)).map((s) => s.id));
   if (!realPeopleStyles.size) return false;
   const entities = (brief.entities ?? {}) as Entities;
   const wanted = peopleToConfirm({ directions, requestStyleId: request.styleId, realPeopleStyles, people: entities.people ?? [] });
