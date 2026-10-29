@@ -35,11 +35,12 @@ ${escapeDelimited(story, 'story')}
 </story>
 
 Look at the attached image as a reader who has just read this headline. Score from 1 to 10: does the image tell this article's story at a glance?
-10: the story's subject and what is happening to it are unmistakable.
-7: a reader of the headline connects them at once.
-4: it fits the topic in general, but nothing ties it to this story.
-1: unrelated or misleading.
-Judge only what is visible at thumbnail size. What the image was meant to show is context, not credit.
+9-10: from the image alone a reader could name this story's subject and what happened to it.
+7-8: the subject is recognisably this story's (its landmark, product, commodity or people) and the tension is visible.
+5-6: right topic and easy to read, but it would fit many stories on this topic (any boardroom, any city, any factory).
+3-4: a loose metaphor that only makes sense after reading the headline.
+1-2: unrelated or misleading.
+Be strict: most competent but generic images are a 5 or 6. Judge only what is visible at thumbnail size; what the image was meant to show is context, not credit.
 
 Return only JSON: { "storyScore": 1-10, "reason": string }
 reason: at most 160 characters. Under 8, say what the image should show to make the story clearer, in words an illustrator can act on, never asking for text, labels or logos.`;

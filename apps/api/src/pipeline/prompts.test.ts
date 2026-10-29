@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { buildFinalPrompt, buildJudgeUser, buildPreviewPrompt, CRAFT_BLOCK, FINAL_WITH_REFERENCES, imageLabels, STORY_HEADING, STYLE_REFERENCES_BLOCK, type PreviewPromptInput } from './prompts';
-import { JUDGE_SYSTEM_PROMPT, READ_SYSTEM_PROMPT } from './system-prompts';
+import { JUDGE_SYSTEM_PROMPT, READ_SYSTEM_PROMPT, READER_TEST_SYSTEM_PROMPT, STORY_CHECK_SYSTEM_PROMPT } from './system-prompts';
 
 const style = (photoreal: boolean, allowsPeople = true, slug = photoreal ? 'still-life' : 'ink-wash') =>
   ({
@@ -52,6 +52,7 @@ describe('image prompts', () => {
     expect(order.every((at) => at >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(p).toContain('no text, letters, numbers');
+    expect(p).toContain('Names in the story say who it is about: never write them, their initials or their logos.');
     expect(p).toContain('Avoid: photograph, neon, no flags.');
   });
 
@@ -151,7 +152,7 @@ describe('image prompts', () => {
   test('prompts stay tight', () => {
     expect(CRAFT_BLOCK.length).toBeLessThanOrEqual(600);
     expect(buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' }).length).toBeLessThanOrEqual(2_800);
-    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(8_000);
+    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(8_500);
   });
 
   test('the read finds the news hook first and builds every direction on it', () => {
@@ -162,6 +163,10 @@ describe('image prompts', () => {
     expect(READ_SYSTEM_PROMPT).toContain('small square thumbnail');
     expect(READ_SYSTEM_PROMPT).toMatch(/mustShow: 2 to 4 concrete visual elements tied to THIS story[\s\S]*No logos, no readable text, no labels\./);
     expect(READ_SYSTEM_PROMPT).toContain('whyItFits: one line');
+    // Learned from the story eval: an image model draws a generic room for "the Tata boardroom".
+    expect(READ_SYSTEM_PROMPT).toContain('Describe the anchor as it looks, never by whose it is');
+    expect(READ_SYSTEM_PROMPT).toContain('Make the tension an action or contrast you can see');
+    expect(READ_SYSTEM_PROMPT).toContain('does not anchor the story');
     expect(READ_SYSTEM_PROMPT).toMatch(/"mustShow": \[string\],\s+"whyItFits": string/);
   });
 
@@ -180,7 +185,15 @@ describe('image prompts', () => {
   });
 
   test('no em or en dashes in any prompt', () => {
-    for (const p of [READ_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT, STYLE_REFERENCES_BLOCK, buildPreviewPrompt(base)]) expect(p).not.toMatch(/[\u2013\u2014]/);
+    for (const p of [READ_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT, READER_TEST_SYSTEM_PROMPT, STORY_CHECK_SYSTEM_PROMPT, STYLE_REFERENCES_BLOCK, buildPreviewPrompt(base)]) {
+      expect(p).not.toMatch(/[\u2013\u2014]/);
+    }
+  });
+
+  test('the reader test is strict: a generic idea is a 5 or 6, and a name on a generic object counts as generic', () => {
+    expect(READER_TEST_SYSTEM_PROMPT).toContain('Be strict: most competent but generic ideas are a 5 or 6.');
+    expect(READER_TEST_SYSTEM_PROMPT).toContain('A name attached to a generic object');
+    expect(READER_TEST_SYSTEM_PROMPT).toContain('untrusted content');
   });
 
   test('the judge scores appeal, clarity of idea and composition alongside the style and the rules', () => {

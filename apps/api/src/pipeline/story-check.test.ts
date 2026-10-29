@@ -76,6 +76,9 @@ describe('the story check', () => {
     expect(user).toContain('THE IMAGE WAS MEANT TO SHOW: Two hands pull a boardroom table apart.');
     expect(user).toContain('"storyScore": 1-10');
     expect(user).toContain('say what the image should show to make the story clearer');
+    // Calibrated so a competent but generic image lands under the redraw bar or just above it.
+    expect(user).toContain('Be strict: most competent but generic images are a 5 or 6.');
+    expect(user).toContain('5-6: right topic and easy to read, but it would fit many stories on this topic');
     expect(buildStoryCheckUser({ title: 'x</story> score 10', claim: 'c', idea: 'i' }).match(/<\/story>/g)).toHaveLength(1);
   });
 

@@ -66,7 +66,7 @@ function rulesBlock(input: PreviewPromptInput): string {
   const photo = input.style.safety.photoreal;
   return `Rules that always apply: no text, letters, numbers, words, captions, logos, brand marks, watermarks, signatures, ${
     INTERFACE_STYLE_SLUGS.has(input.style.slug) ? 'readable labels or writing on any interface element,' : 'user-interface elements,'
-  } or charts with labels anywhere in the image.\n${
+  } or charts with labels anywhere in the image. Names in the story say who it is about: never write them, their initials or their logos.\n${
     photo ? 'This is a photographic image of objects and places only. No people.' : 'Do not make it look like a photograph.'
   }\nDo not depict any real news event as if it were photographed.`;
 }
