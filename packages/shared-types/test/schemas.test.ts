@@ -50,33 +50,16 @@ describe('style library seed', () => {
     expect(StyleLibrarySeed.safeParse(oldFamily).success).toBe(false);
   });
 
-  test('photoreal styles show objects only and never allow real people; only illustrated styles allow real people', () => {
+  test('photoreal styles show objects only and never allow real people; every other style with people does, except mixed-media', () => {
     const photoreal = seed.styles.filter((s) => s.safety.photoreal).map((s) => s.slug);
     expect(photoreal.sort()).toEqual(['cinematic-3d', 'photo-montage', 'still-life']);
-    for (const style of seed.styles.filter((s) => s.safety.photoreal)) expect(style.safety.allowsPeople).toBe(false);
-    const realPeople = seed.styles.filter((s) => s.safety.allowsRealPeople).map((s) => s.slug);
-    expect(realPeople.sort()).toEqual(
-      [
-        'gouache',
-        'digital-painterly',
-        'watercolour',
-        'charcoal',
-        'ink-wash',
-        'naive-crayon',
-        'clean-line-comic',
-        'bold-comic',
-        'loose-cartoon',
-        'caricature',
-        'paper-cut',
-        'etching',
-        'kalighat',
-        'contemporary-miniature',
-      ].sort()
-    );
-    for (const style of seed.styles.filter((s) => s.safety.allowsRealPeople)) {
-      expect(style.safety.allowsPeople).toBe(true);
-      expect(style.safety.photoreal).toBe(false);
+    for (const style of seed.styles.filter((s) => s.safety.photoreal)) {
+      expect(style.safety.allowsPeople).toBe(false);
+      expect(style.safety.allowsRealPeople).toBe(false);
     }
+    // Mixed-media builds figures from photo fragments, so a real face there would read as a photograph.
+    const withoutFaces = seed.styles.filter((s) => s.safety.allowsPeople && !s.safety.allowsRealPeople).map((s) => s.slug);
+    expect(withoutFaces).toEqual(['mixed-media']);
   });
 
   test('the at-a-glance table shows the same real-people flag as the seed', () => {

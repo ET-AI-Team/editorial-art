@@ -175,14 +175,14 @@ describe('rules', () => {
     expect(['NONE', 'ELEVATED', 'HIGH', 'BLOCKED', null].map((l) => realFacesAllowedAt(l as never))).toEqual([true, false, false, false, false]);
   });
 
-  test('faces only in illustrated, non-satire styles on stories with no sensitivity', () => {
+  test('faces in any illustrated style that allows people, never photoreal, only on stories with no sensitivity', () => {
     const style = (slug: string, safety: Partial<{ allowsPeople: boolean; allowsRealPeople: boolean; photoreal: boolean }> = {}) => ({ slug, safety: { allowsPeople: true, allowsRealPeople: true, photoreal: false, ...safety } });
     expect(realFacesAllowedFor(style('gouache'), 'NONE')).toBe(true);
     expect(realFacesAllowedFor(style('gouache'), 'ELEVATED')).toBe(false);
-    expect(realFacesAllowedFor(style('bold-comic'), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('bold-comic'), 'NONE')).toBe(true);
     expect(realFacesAllowedFor(style('caricature'), 'NONE')).toBe(true);
     expect(realFacesAllowedFor(style('caricature'), 'ELEVATED')).toBe(false);
-    expect(realFacesAllowedFor(style('kalighat'), 'NONE')).toBe(false);
+    expect(realFacesAllowedFor(style('kalighat'), 'NONE')).toBe(true);
     expect(realFacesAllowedFor(style('still-life', { photoreal: true, allowsRealPeople: false }), 'NONE')).toBe(false);
     expect(realFacesAllowedFor(style('watercolour', { allowsRealPeople: false }), 'NONE')).toBe(false);
   });
@@ -210,7 +210,7 @@ describe('rules', () => {
     expect(clause).toContain('show Asha Rao as illustrated figures');
     expect(clause).toContain('a respectful, recognisable likeness');
     expect(clause).toContain('mild stylisation true to the style');
-    expect(clause).toContain('Never mocking, caricatured or exaggerated unless the editor asks');
+    expect(clause).toContain('Never mocking or grotesque');
     const style = (await styleById(styles.get('ink-wash')!))!;
     const withNegatives = { ...style, ruleSheet: { ...style.ruleSheet, negative: 'text, caricature, real person likeness, celebrity likeness, portraits' } };
     expect(likenessStyle(withNegatives, ['Asha Rao']).ruleSheet.negative).toBe('text, caricature');

@@ -15,7 +15,7 @@ import { chat } from './ai';
 
 /** The people clause when likeness photos go with the prompt (prompts.ts peopleClause). */
 export function realLikenessClause(names: string[]): string {
-  return `People: show ${names.join(' and ')} as illustrated figures in this house style: a respectful, recognisable likeness from the attached reference photos, with mild stylisation true to the style, dignified and natural. Never mocking, caricatured or exaggerated unless the editor asks for it. Anyone else in the scene stays generic.`;
+  return `People: show ${names.join(' and ')} as illustrated figures in this house style: a respectful, recognisable likeness from the attached reference photos, with mild stylisation true to the style, dignified and natural. Never mocking or grotesque; exaggerate features only as gently as the house style itself does. Anyone else in the scene stays generic.`;
 }
 
 /** Added to the prompt for the redraw after a weak likeness. */

@@ -113,15 +113,12 @@ export function finalSensitivity(modelLevel: SensitivityLevel, floor: Sensitivit
 /** Styles that read as satire, never used once a story carries any sensitivity. */
 export const SATIRE_PRONE_SLUGS = new Set(['caricature', 'kalighat', 'clay-set', 'bold-comic']);
 
-/** Satire-prone, but a respectful likeness is the whole point of the style, so real faces are allowed. */
-export const LIKENESS_STYLE_SLUGS = new Set(['caricature']);
-
 /**
  * Whether a real person's face may be drawn: only on stories with no sensitivity at all (courts,
- * arrests, fraud and the like are ELEVATED and stay symbolic), and only in illustrated styles that
- * allow it and are not satire-prone, so a real face is never mocked by default. Caricature is the
- * exception: the editor picks it for a likeness, and its rules keep that likeness respectful.
+ * arrests, fraud and the like are ELEVATED and stay symbolic), and in any illustrated style that
+ * allows people. Never in a photoreal style, where a real face would pass for a photograph. Every
+ * likeness is drawn respectfully (see the people clause), satire-prone styles included.
  */
 export function realFacesAllowedFor(style: { slug: string; safety: { allowsPeople: boolean; allowsRealPeople: boolean; photoreal: boolean } }, level: SensitivityLevel | null | undefined): boolean {
-  return level === 'NONE' && style.safety.allowsRealPeople && style.safety.allowsPeople && !style.safety.photoreal && (!SATIRE_PRONE_SLUGS.has(style.slug) || LIKENESS_STYLE_SLUGS.has(style.slug));
+  return level === 'NONE' && style.safety.allowsRealPeople && style.safety.allowsPeople && !style.safety.photoreal;
 }
