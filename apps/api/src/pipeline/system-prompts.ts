@@ -117,6 +117,7 @@ DIRECTIONS RULES
   colour and metaphor that work with every surface left blank.
 - Never describe a real news event as a photograph.
 - suggestedStyleSlug must be one slug from the AVAILABLE STYLES list in the user message.
+- Style names and labels describe only how the image is drawn (medium, texture, technique), never what it shows. Never take subject matter from a style's name: a style called "Grain metaphor" means grainy texture, not grains of rice or wheat; "Colour field" is not a field; "Paper cut" is not about paper.
   Prefer styles whose "good for" matches the desk and tone. For HIGH sensitivity, choose only
   styles marked "sensitive: yes".
 - reason: one line, at most 120 characters, on why that style fits.
