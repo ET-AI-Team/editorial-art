@@ -61,6 +61,7 @@ export function requestDetail(r: RequestWithEverything, styles: Map<string, Styl
         idea: d.idea,
         mustShow: d.mustShow,
         whyItFits: d.whyItFits,
+        identityCues: d.identityCues,
         reason: d.reason,
         style: style ? styleRef(style) : { id: d.suggestedStyleId, slug: 'unknown', label: 'Unknown' },
       };
@@ -79,7 +80,7 @@ export function requestDetail(r: RequestWithEverything, styles: Map<string, Styl
         promptDropped: plan.success ? (plan.data as BatchPlan).promptDropped : false,
         createdAt: b.createdAt.toISOString(),
         completedAt: b.completedAt?.toISOString() ?? null,
-        // Best story first; options without a story score keep their creation order after them.
+        // Best story and identity first; options without a story score keep their creation order after them.
         options: orderByStory(b.options).map((o) => optionDto(o, styles, refs)),
       };
     });

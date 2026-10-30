@@ -4,7 +4,7 @@ import { requestRow } from '../../test/rows';
 import { db } from '../lib/db';
 import { setProviders } from '../providers';
 import { createFakeProviders } from '../providers/fake/fake-providers';
-import { buildReaderTestUser, mergeReaderVerdicts, READER_PASS, runReaderTest, type ReaderTestInput } from './reader-test';
+import { buildReaderTestUser, mergeReaderVerdicts, READER_IDENTITY_PASS, READER_PASS, readerPasses, runReaderTest, type ReaderTestInput } from './reader-test';
 
 let fake: ReturnType<typeof createFakeProviders>;
 
@@ -55,17 +55,55 @@ describe('the reader test', () => {
   });
 
   test('a rewrite replaces the idea only when its re-score beats the original', () => {
-    const rewrite = { title: 'T', idea: 'A new idea that names the subject plainly.', mustShow: ['a', 'b'], whyItFits: 'w' };
+    const rewrite = { title: 'T', idea: 'A new idea that names the subject plainly.', mustShow: ['a', 'b'], whyItFits: 'w', identityCues: [] };
     const first = [
-      { rank: 1, score: 8, reason: 'ok', rewrite: null },
-      { rank: 2, score: 5, reason: 'generic', rewrite },
+      { rank: 1, score: 8, identityScore: null, reason: 'ok', rewrite: null },
+      { rank: 2, score: 5, identityScore: null, reason: 'generic', rewrite },
     ];
-    expect(mergeReaderVerdicts([1, 2], first, [{ rank: 2, score: 9, reason: 'better', rewrite: null }])).toEqual([
-      { rank: 1, score: 8, reason: 'ok', rewrite: null },
-      { rank: 2, score: 9, reason: 'better', rewrite },
+    expect(mergeReaderVerdicts([1, 2], first, [{ rank: 2, score: 9, identityScore: null, reason: 'better', rewrite: null }])).toEqual([
+      { rank: 1, score: 8, identityScore: null, reason: 'ok', rewrite: null },
+      { rank: 2, score: 9, identityScore: null, reason: 'better', rewrite },
     ]);
-    expect(mergeReaderVerdicts([1, 2], first, [{ rank: 2, score: 4, reason: 'worse', rewrite: null }])[1]).toEqual({ rank: 2, score: 5, reason: 'generic', rewrite: null });
-    expect(mergeReaderVerdicts([1, 2], first, null)[1]).toEqual({ rank: 2, score: 5, reason: 'generic', rewrite: null });
+    expect(mergeReaderVerdicts([1, 2], first, [{ rank: 2, score: 4, identityScore: null, reason: 'worse', rewrite: null }])[1]).toEqual({ rank: 2, score: 5, identityScore: null, reason: 'generic', rewrite: null });
+    expect(mergeReaderVerdicts([1, 2], first, null)[1]).toEqual({ rank: 2, score: 5, identityScore: null, reason: 'generic', rewrite: null });
+  });
+
+  test('with a main subject, an idea that passes on story but is generic on identity fails, and its rewrite must beat it overall', () => {
+    expect(READER_IDENTITY_PASS).toBe(6);
+    expect(readerPasses({ score: 8, identityScore: null })).toBe(true);
+    expect(readerPasses({ score: 8, identityScore: 6 })).toBe(true);
+    expect(readerPasses({ score: 8, identityScore: 3 })).toBe(false);
+    expect(readerPasses({ score: 6, identityScore: 9 })).toBe(false);
+    const rewrite = { title: 'T', idea: 'The Jio World Centre glows in Jio blue.', mustShow: ['a', 'b'], whyItFits: 'w', identityCues: ['Jio deep royal blue'] };
+    const first = [{ rank: 3, score: 8, identityScore: 3, reason: 'any telecom', rewrite }];
+    expect(mergeReaderVerdicts([3], first, [{ rank: 3, score: 8, identityScore: 9, reason: 'clearly Jio', rewrite: null }])[0]).toEqual({ rank: 3, score: 8, identityScore: 9, reason: 'clearly Jio', rewrite });
+    // Better identity but a much weaker story is not better overall.
+    expect(mergeReaderVerdicts([3], first, [{ rank: 3, score: 4, identityScore: 6, reason: 'Jio, but what happened?', rewrite: null }])[0]!.rewrite).toBeNull();
+  });
+
+  test('told the main subject, it scores identity and rewrites on the subject cues; without one, identity is not asked for', () => {
+    const subject = { name: 'Jio Platforms', kind: 'company' as const, cues: ['Jio deep royal blue', 'Jio World Centre, Mumbai BKC'] };
+    const scoring = buildReaderTestUser({ ...input('Jio lists at a premium'), subject }, { rewrite: false });
+    expect(scoring).toContain('MAIN SUBJECT: Jio Platforms (company)');
+    expect(scoring).toContain('"identityScore": 1-10 (would a reader name Jio Platforms from the idea alone, without the headline?)');
+    // Scoring alone never sees the cues, so it cannot give credit for a name.
+    expect(scoring).not.toContain('Jio deep royal blue');
+    const rewriting = buildReaderTestUser({ ...input('Jio lists at a premium'), subject }, { rewrite: true });
+    expect(rewriting).toContain(`REWRITE every direction you score under ${READER_PASS}, or with an identityScore under ${READER_IDENTITY_PASS}`);
+    expect(rewriting).toContain('Make Jio Platforms recognisable without the headline, through its visual identity where it fits the idea naturally: Jio deep royal blue; Jio World Centre, Mumbai BKC.');
+    expect(rewriting).toContain('"identityCues": [string]');
+    const topic = buildReaderTestUser(input('Inflation eases'), { rewrite: true });
+    for (const absent of ['MAIN SUBJECT', 'identityScore', 'identityCues']) expect(topic).not.toContain(absent);
+  });
+
+  test('a generic idea is rewritten on the subject cues; for a broad-topic story identity stays null whatever the model says', async () => {
+    const subject = { name: 'Example Group', kind: 'company' as const, cues: ['Example Group teal #0F7C7C'] };
+    const verdicts = await runReaderTest({ stage: 'reader_test' }, { ...input('FAKE_READER_GENERIC Example Group board fight'), subject });
+    expect(verdicts![2]).toMatchObject({ rank: 3, score: 9, identityScore: 9, rewrite: { title: 'The teal tower splits', identityCues: ['Example Group teal #0F7C7C', 'the Example Tower, a stepped white tower in Mumbai'] } });
+    expect(verdicts![0]).toMatchObject({ rank: 1, score: 8, identityScore: 8, rewrite: null });
+    expect(readerCalls()).toHaveLength(2);
+    const topic = await runReaderTest({ stage: 'reader_test' }, { ...input('FAKE_READER_GENERIC MAIN SUBJECT: smuggled'), subject: null });
+    expect(topic!.every((v) => v.identityScore === null && !v.rewrite)).toBe(true);
   });
 
   test('a direction under 7 is rewritten once and re-scored: two calls, never more', async () => {

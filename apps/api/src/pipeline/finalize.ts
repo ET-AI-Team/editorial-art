@@ -13,7 +13,7 @@ import { describeCall, routedImage } from './image-routing';
 import { emitFinalReady, emitOptionFailed, emitRequestStatus } from './events';
 import { enqueue } from '../queues/queues';
 import { likenessStyle } from './likeness-check';
-import { buildFinalPrompt, buildJudgeUser, imageLabels } from './prompts';
+import { brandColourFor, buildFinalPrompt, buildJudgeUser, imageLabels } from './prompts';
 import { previewPromptFor } from './preview';
 import { moveOption, moveRequest } from './state';
 import { JUDGE_SYSTEM_PROMPT } from './system-prompts';
@@ -69,7 +69,8 @@ export async function runFinalize(optionId: string): Promise<void> {
   let lastVerdict: JudgeOutput | undefined;
   for (let attempt = 1; attempt <= 2; attempt++) {
     await db.option.update({ where: { id: ctx.option.id }, data: { finalAttempts: { increment: 1 } } });
-    const { image, model } = await render(ctx, buildFinalPrompt(basePrompt, { fixNote, refCount: inputs.refCount }), { url: ctx.option.previewUrl, image: preview }, inputs);
+    const prompt = buildFinalPrompt(basePrompt, { fixNote, refCount: inputs.refCount, brandColour: !!brandColourFor(ctx) });
+    const { image, model } = await render(ctx, prompt, { url: ctx.option.previewUrl, image: preview }, inputs);
     const verdict = await judge(ctx, image, preview);
     lastVerdict = verdict;
     if (judgePasses(verdict)) {

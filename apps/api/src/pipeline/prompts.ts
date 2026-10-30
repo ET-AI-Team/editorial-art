@@ -1,6 +1,7 @@
-import type { BatchPlanEntry, SentImageRole } from '@editorial-art/shared-types';
+import type { BatchPlanEntry, IdentityEntry, SentImageRole } from '@editorial-art/shared-types';
 import type { StyleView } from '../library/styles';
 import { ruleSummary } from '../library/styles';
+import { heroBrandColour } from './identity';
 import { realLikenessClause } from './likeness-check';
 import type { PeopleEntry } from './read';
 
@@ -11,10 +12,10 @@ import type { PeopleEntry } from './read';
 
 export interface PreviewPromptInput {
   style: StyleView;
-  /** `mustShow` is empty or absent for directions read before it existed. */
-  direction: { title: string; idea: string; avoid: string[]; peopleDepicted: PeopleEntry[]; mustShow?: string[] };
-  /** `hook` is null or absent for briefs read before it existed. */
-  brief: { tone: string; desk: string; hook?: { tension: string; indianContext: string } | null };
+  /** `mustShow` and `identityCues` are empty or absent for directions read before they existed. */
+  direction: { title: string; idea: string; avoid: string[]; peopleDepicted: PeopleEntry[]; mustShow?: string[]; identityCues?: string[] };
+  /** `hook` and `identity` are null or absent for briefs read before they existed. */
+  brief: { tone: string; desk: string; hook?: { tension: string; indianContext: string } | null; identity?: IdentityEntry[] | null };
   peopleMode: BatchPlanEntry['peopleMode'];
   likenessNames: string[];
   editorPrompt: string | null;
@@ -56,10 +57,19 @@ const CRAFT_BLOCK_NO_REFS = `Craft: ${CRAFT_POINTS}`;
 
 /**
  * Follows the story in every prompt that has references: the story decides what is shown, the
- * references decide how it is drawn.
+ * references decide how it is drawn. With a hero brand colour, the references keep the palette of
+ * everything except the hero object, which keeps the subject's colour so the subject is recognisable.
  */
-export const STYLE_REFERENCES_BLOCK =
-  'STYLE REFERENCES: The attached reference images, all by working illustrators, define the visual style. Match them as closely as possible in rendering technique, colour palette and background colour, texture and grain, shading, shape language, line or no-line, and level of detail. They override any colour or style detail described in words. They set the rendering, palette and texture, and they never change what is shown: do not copy their subjects or compositions; draw the story above.';
+const REFERENCES_LEAD =
+  'STYLE REFERENCES: The attached reference images, all by working illustrators, define the visual style. Match them as closely as possible in rendering technique, colour palette and background colour, texture and grain, shading, shape language, line or no-line, and level of detail.';
+const REFERENCES_TAIL = 'They set the rendering, palette and texture, and they never change what is shown: do not copy their subjects or compositions; draw the story above.';
+export const STYLE_REFERENCES_BLOCK = `${REFERENCES_LEAD} They override any colour or style detail described in words. ${REFERENCES_TAIL}`;
+export const STYLE_REFERENCES_BLOCK_BRAND = `${REFERENCES_LEAD} They override any colour or style detail described in words, except the hero object's brand colour given above, which the hero keeps, rendered in the references' technique. ${REFERENCES_TAIL}`;
+
+/** The brand colour this option's hero object carries, if any (see heroBrandColour). */
+export function brandColourFor(input: Pick<PreviewPromptInput, 'direction' | 'brief'>): string | null {
+  return heroBrandColour(input.brief.identity, input.direction.identityCues);
+}
 
 export const STORY_HEADING = 'THE STORY (must be clear at thumbnail size):';
 
@@ -72,13 +82,20 @@ function rulesBlock(input: PreviewPromptInput): string {
   }\nDo not depict any real news event as if it were photographed.`;
 }
 
-/** What the image must show, first in every prompt: the idea, its concrete elements, the tension, the place. */
+/**
+ * What the image must show, first in every prompt: the idea, its concrete elements, the subject's
+ * brand colour on the hero object when the idea uses it, the tension, the place.
+ */
 function storyBlock(input: PreviewPromptInput): string {
   const must = input.direction.mustShow?.filter(Boolean) ?? [];
   const hook = input.brief.hook;
+  const colour = brandColourFor(input);
+  const hero = must[0] ?? input.direction.title;
+  const palette = input.refCount ? "the references' palette" : "the style's palette";
   return [
     `${STORY_HEADING} ${input.direction.idea}`,
     must.length ? `Must show, the first as the focal point:\n${must.map((m) => `- ${m}`).join('\n')}` : `Focal point: ${input.direction.title}.`,
+    colour ? `The hero object (${hero}) carries the subject's brand colour (${colour}), so the subject is recognisable; everything else follows ${palette}.` : '',
     hook?.tension ? `The tension to make visible: ${hook.tension}.` : '',
     hook?.indianContext ? `Indian context: ${hook.indianContext}.` : '',
     `Mood: ${input.brief.tone}, suited to a ${input.brief.desk} story.`,
@@ -108,7 +125,7 @@ function otherAttachments(input: PreviewPromptInput): string {
 export function buildPreviewPrompt(input: PreviewPromptInput): string {
   const avoid = `Avoid: ${[input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ')}.`;
   const style = input.refCount
-    ? [STYLE_REFERENCES_BLOCK, `Technique in words (the references win wherever they differ): ${input.style.ruleSheet.promptCore}`]
+    ? [brandColourFor(input) ? STYLE_REFERENCES_BLOCK_BRAND : STYLE_REFERENCES_BLOCK, `Technique in words (the references win wherever they differ): ${input.style.ruleSheet.promptCore}`]
     : [`Style: ${input.style.ruleSheet.promptCore}`];
   return [
     storyBlock(input),
@@ -126,10 +143,12 @@ export function buildPreviewPrompt(input: PreviewPromptInput): string {
 
 export const FINAL_WITH_REFERENCES =
   'The first attached image is the approved preview; keep its composition exactly. The next images are the style references; match their rendering, palette and texture exactly.';
+export const FINAL_WITH_REFERENCES_BRAND =
+  "The first attached image is the approved preview; keep its composition exactly. The next images are the style references; match their rendering, palette and texture exactly, except that the hero object keeps the subject's brand colour as in the preview.";
 
-export function buildFinalPrompt(previewPrompt: string, opts: { fixNote?: string; refCount?: number } = {}): string {
+export function buildFinalPrompt(previewPrompt: string, opts: { fixNote?: string; refCount?: number; brandColour?: boolean } = {}): string {
   return [
-    opts.refCount ? FINAL_WITH_REFERENCES : '',
+    opts.refCount ? (opts.brandColour ? FINAL_WITH_REFERENCES_BRAND : FINAL_WITH_REFERENCES) : '',
     'Recreate the first attached image at full quality. Keep exactly the same composition, subject, pose, framing, colours and mood. Do not add, remove or move anything. Improve only finish: cleaner line work, richer texture, correct anatomy, crisp edges.',
     previewPrompt,
     'Quality: final publication artwork for a newspaper website, highly detailed, consistent lighting, no artefacts.',

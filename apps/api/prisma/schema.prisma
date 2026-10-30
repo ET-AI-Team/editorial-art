@@ -195,6 +195,8 @@ model Brief {
   altTextSeed        String
   /// ReadHook (shared-types model-outputs.ts): the news the images must tell. Null for briefs read before it existed.
   hook               Json?
+  /// ReadIdentity (shared-types model-outputs.ts): the main subject first, then up to two other key actors, each with safe visual cues. [] for a broad-topic story; null for briefs read before it existed.
+  identity           Json?
   truncatedForRead   Boolean     @default(false)
   model              String
   createdAt          DateTime    @default(now()) @db.Timestamptz(3)
@@ -206,24 +208,28 @@ model Brief {
 
 /// One of the three ways to show the story.
 model Direction {
-  id               String   @id @default(uuid())
-  briefId          String
-  brief            Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
-  rank             Int
-  title            String
-  idea             String
-  suggestedStyleId String
-  reason           String
+  id                  String   @id @default(uuid())
+  briefId             String
+  brief               Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  rank                Int
+  title               String
+  idea                String
+  suggestedStyleId    String
+  reason              String
   /// [{ name, how: illustrated | symbolised | absent, likenessId? }]
-  peopleDepicted   Json
-  avoid            String[]
+  peopleDepicted      Json
+  avoid               String[]
   /// 2 to 4 concrete things the image must show, tied to this story.
-  mustShow         String[] @default([])
+  mustShow            String[] @default([])
   /// One line linking the image to the story's claim.
-  whyItFits        String   @default("")
+  whyItFits           String   @default("")
+  /// Which of the main subject's identity cues the idea shows.
+  identityCues        String[] @default([])
   /// The reader test, 1 to 10: does a reader of the headline connect this idea to the story? Null when the test did not run.
-  readerScore      Int?
-  readerReason     String?
+  readerScore         Int?
+  /// The reader test, 1 to 10: would a reader name the main subject from the idea alone? Null when the story has no single subject.
+  readerIdentityScore Int?
+  readerReason        String?
 
   @@unique([briefId, rank])
 }
@@ -282,6 +288,9 @@ model Option {
   /// The story check of the preview, 1 to 10: does it tell this article's story at a glance? Null when the check did not run or failed.
   storyScore      Int?
   storyReason     String?
+  /// Same check, 1 to 10: without the headline, would a reader identify the company or person this is about? Null when the story has no single subject or the check failed.
+  identityScore   Int?
+  identityReason  String?
   /// Story redraws so far. A batch redraws at most one option, once.
   storyRedraws    Int         @default(0)
   blockedReason   String?

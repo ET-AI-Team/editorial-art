@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { buildFinalPrompt, buildJudgeUser, buildPreviewPrompt, CRAFT_BLOCK, FINAL_WITH_REFERENCES, imageLabels, STORY_HEADING, STYLE_REFERENCES_BLOCK, type PreviewPromptInput } from './prompts';
+import {
+  brandColourFor,
+  buildFinalPrompt,
+  buildJudgeUser,
+  buildPreviewPrompt,
+  CRAFT_BLOCK,
+  FINAL_WITH_REFERENCES,
+  FINAL_WITH_REFERENCES_BRAND,
+  imageLabels,
+  STORY_HEADING,
+  STYLE_REFERENCES_BLOCK,
+  STYLE_REFERENCES_BLOCK_BRAND,
+  type PreviewPromptInput,
+} from './prompts';
 import { JUDGE_SYSTEM_PROMPT, READ_SYSTEM_PROMPT, READER_TEST_SYSTEM_PROMPT, STORY_CHECK_SYSTEM_PROMPT } from './system-prompts';
 
 const style = (photoreal: boolean, allowsPeople = true, slug = photoreal ? 'still-life' : 'ink-wash') =>
@@ -66,6 +79,55 @@ describe('image prompts', () => {
     expect(STYLE_REFERENCES_BLOCK).toContain('They set the rendering, palette and texture, and they never change what is shown');
     expect(STYLE_REFERENCES_BLOCK).toContain('Match them as closely as possible in rendering technique, colour palette');
     expect(STYLE_REFERENCES_BLOCK).toContain('draw the story above');
+  });
+
+  describe('the hero brand colour', () => {
+    const jio = { name: 'Jio Platforms', kind: 'company' as const, cues: ['Jio deep royal blue', 'Jio World Centre, Mumbai BKC', 'JioFiber router', 'Mukesh Ambani'] };
+    const sim: PreviewPromptInput = {
+      ...base,
+      direction: { title: 'SIM card rises', idea: 'A Jio SIM card rises like a listing bell over Dalal Street.', avoid: [], peopleDepicted: [], mustShow: ['a deep blue SIM card', 'a rising arrow of light'], identityCues: ['Jio deep royal blue'] },
+      brief: { ...base.brief, identity: [jio] },
+    };
+    const LINE = "The hero object (a deep blue SIM card) carries the subject's brand colour (Jio deep royal blue), so the subject is recognisable; everything else follows the references' palette.";
+
+    test('the hero object keeps the brand colour when the idea uses it; the references keep the rest', () => {
+      const p = buildPreviewPrompt(sim);
+      expect(p).toContain(LINE);
+      expect(p.indexOf(LINE)).toBeLessThan(p.indexOf('STYLE REFERENCES'));
+      expect(p).toContain(STYLE_REFERENCES_BLOCK_BRAND);
+      expect(p).not.toContain(STYLE_REFERENCES_BLOCK);
+      expect(STYLE_REFERENCES_BLOCK_BRAND).toContain("except the hero object's brand colour given above");
+      // Reference fidelity for everything else is unchanged.
+      expect(STYLE_REFERENCES_BLOCK_BRAND).toContain('Match them as closely as possible in rendering technique, colour palette');
+      expect(STYLE_REFERENCES_BLOCK_BRAND).toContain('they never change what is shown');
+      // Without references, the style's own palette takes the rest.
+      expect(buildPreviewPrompt({ ...sim, refCount: 0 })).toContain("everything else follows the style's palette.");
+    });
+
+    test('no colour cue, a colour the idea does not use, or a person or place as subject: no brand colour line', () => {
+      for (const input of [
+        { ...sim, brief: { ...sim.brief, identity: [{ ...jio, cues: ['Jio World Centre, Mumbai BKC', 'JioFiber router'] }] } },
+        { ...sim, direction: { ...sim.direction, identityCues: ['Jio World Centre, Mumbai BKC'] } },
+        { ...sim, direction: { ...sim.direction, identityCues: [] } },
+        { ...sim, brief: { ...sim.brief, identity: [{ ...jio, kind: 'person' as const }] } },
+        { ...sim, brief: { ...sim.brief, identity: [] } },
+        { ...sim, brief: { tone: 'analytical', desk: 'markets' } },
+      ]) {
+        const p = buildPreviewPrompt(input);
+        expect(brandColourFor(input)).toBeNull();
+        expect(p).not.toContain("subject's brand colour");
+        expect(p).toContain(STYLE_REFERENCES_BLOCK);
+      }
+    });
+
+    test('the final keeps the hero colour too, and the same story block', () => {
+      const preview = buildPreviewPrompt(sim);
+      const final = buildFinalPrompt(preview, { refCount: 3, brandColour: true });
+      expect(final.startsWith(FINAL_WITH_REFERENCES_BRAND)).toBe(true);
+      expect(FINAL_WITH_REFERENCES_BRAND).toContain("the hero object keeps the subject's brand colour as in the preview");
+      expect(final).toContain(LINE);
+      expect(buildFinalPrompt(buildPreviewPrompt(base), { refCount: 3 }).startsWith(FINAL_WITH_REFERENCES)).toBe(true);
+    });
   });
 
   test('a direction or brief read before the hook existed still gets a story block, with its title as the focal point', () => {
@@ -152,7 +214,7 @@ describe('image prompts', () => {
   test('prompts stay tight', () => {
     expect(CRAFT_BLOCK.length).toBeLessThanOrEqual(600);
     expect(buildPreviewPrompt({ ...base, editorPrompt: 'keep it dignified' }).length).toBeLessThanOrEqual(2_800);
-    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(8_500);
+    expect(READ_SYSTEM_PROMPT.length).toBeLessThanOrEqual(10_500);
   });
 
   test('the read finds the news hook first and builds every direction on it', () => {
@@ -170,6 +232,18 @@ describe('image prompts', () => {
     expect(READ_SYSTEM_PROMPT).toMatch(/"mustShow": \[string\],\s+"whyItFits": string/);
   });
 
+  test('the read finds the subject identity: safe visual cues only, accuracy first, used where they fit', () => {
+    expect(READ_SYSTEM_PROMPT).toContain('SUBJECT IDENTITY');
+    expect(READ_SYSTEM_PROMPT).toContain('Return [] when the story is about\n  a broad topic with no single subject');
+    for (const cue of ['Jio deep royal blue', 'RBI headquarters on Mint Street', 'JioFiber router', 'Mukesh Ambani', 'NSE listing bell']) expect(READ_SYSTEM_PROMPT).toContain(cue);
+    expect(READ_SYSTEM_PROMPT).toContain('never text or a logo');
+    expect(READ_SYSTEM_PROMPT).toMatch(/Leave out any you are not\s+confident of; never invent/);
+    expect(READ_SYSTEM_PROMPT).toContain('Do not force a cue into an idea it does not suit.');
+    expect(READ_SYSTEM_PROMPT).toMatch(/"identity": \[\{ "name": string, "kind": string, "cues": \[string\] \}\]/);
+    expect(READ_SYSTEM_PROMPT).toMatch(/"whyItFits": string,\s+"identityCues": \[string\]/);
+    expect(READER_TEST_SYSTEM_PROMPT).toContain('would a reader name that specific\ncompany or person?');
+  });
+
   test('the read bans stock cliches unless twisted to the story, and wants three different ideas, keeping every rule', () => {
     expect(READ_SYSTEM_PROMPT).toContain('must differ in the idea itself');
     expect(READ_SYSTEM_PROMPT).toMatch(
@@ -185,7 +259,7 @@ describe('image prompts', () => {
   });
 
   test('no em or en dashes in any prompt', () => {
-    for (const p of [READ_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT, READER_TEST_SYSTEM_PROMPT, STORY_CHECK_SYSTEM_PROMPT, STYLE_REFERENCES_BLOCK, buildPreviewPrompt(base)]) {
+    for (const p of [READ_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT, READER_TEST_SYSTEM_PROMPT, STORY_CHECK_SYSTEM_PROMPT, STYLE_REFERENCES_BLOCK, STYLE_REFERENCES_BLOCK_BRAND, FINAL_WITH_REFERENCES_BRAND, buildPreviewPrompt(base)]) {
       expect(p).not.toMatch(/[\u2013\u2014]/);
     }
   });

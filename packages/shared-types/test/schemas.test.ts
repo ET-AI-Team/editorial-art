@@ -14,6 +14,7 @@ import {
   PhotoAdviceResponse,
   AdminOptionInputs,
   ReaderTestOutput,
+  ReadIdentity,
   ReadOutput,
   StoryCheck,
   higherSensitivity,
@@ -225,9 +226,34 @@ describe('model outputs', () => {
     expect(StoryCheck.safeParse({ storyScore: 7, reason: 'The split table reads.' }).success).toBe(true);
     expect(StoryCheck.safeParse({ storyScore: 0, reason: 'x' }).success).toBe(false);
     expect(StoryCheck.safeParse({ storyScore: 7.5, reason: 'x' }).success).toBe(false);
-    const story = { score: null, reason: null, redraws: 0, readerScore: null, readerReason: null };
+    const story = { score: null, reason: null, identityScore: null, identityReason: null, redraws: 0, readerScore: null, readerIdentityScore: null, readerReason: null };
     expect(AdminOptionInputs.safeParse({ optionId: '11111111-1111-4111-8111-111111111111', preview: null, final: null, story }).success).toBe(true);
     expect(AdminOptionInputs.safeParse({ optionId: '11111111-1111-4111-8111-111111111111', preview: null, final: null }).success).toBe(false);
+  });
+
+  test('identity: the main subject first, then key actors, each with safe visual cues', () => {
+    const jio = { name: 'Jio Platforms', kind: 'company' as const, cues: ['Jio deep royal blue', 'Jio World Centre, Mumbai BKC', 'JioFiber router', 'Mukesh Ambani'] };
+    const parsed = ReadOutput.parse({ ...read, identity: [jio, { name: 'NSE', kind: 'institution', cues: ['NSE listing bell'] }], directions: read.directions.map((d) => ({ ...d, identityCues: ['Jio deep royal blue'] })) });
+    expect(parsed.identity[0]).toEqual(jio);
+    expect(parsed.directions[0]!.identityCues).toEqual(['Jio deep royal blue']);
+    // A read without identity (an older answer, or a broad-topic story) is fine: no subject, no cues.
+    const plain = ReadOutput.parse(read);
+    expect(plain.identity).toEqual([]);
+    expect(plain.directions.every((d) => d.identityCues.length === 0)).toBe(true);
+    // An unsure model may give fewer cues, or none; extras are tolerated and trimmed in code.
+    expect(ReadIdentity.safeParse([{ ...jio, cues: [] }]).success).toBe(true);
+    expect(ReadIdentity.safeParse([{ ...jio, cues: Array.from({ length: 8 }, (_, i) => `cue ${i}`) }]).success).toBe(true);
+    expect(ReadIdentity.safeParse([{ ...jio, cues: Array.from({ length: 9 }, (_, i) => `cue ${i}`) }]).success).toBe(false);
+    expect(ReadIdentity.safeParse([{ ...jio, kind: 'brand' }]).success).toBe(false);
+    expect(ReadIdentity.safeParse([{ ...jio, logo: 'x' }]).success).toBe(false);
+    expect(ReadIdentity.safeParse([{ ...jio, name: '' }]).success).toBe(false);
+  });
+
+  test('the story check may score identity, null when the story has no single subject', () => {
+    expect(StoryCheck.parse({ storyScore: 7, reason: 'x' })).toEqual({ storyScore: 7, identityScore: null, reason: 'x', identityReason: '' });
+    expect(StoryCheck.parse({ storyScore: 7, identityScore: 4, reason: 'x', identityReason: 'Show the blue.' }).identityScore).toBe(4);
+    expect(StoryCheck.safeParse({ storyScore: 7, identityScore: 11, reason: 'x' }).success).toBe(false);
+    expect(ReaderTestOutput.parse({ directions: [{ rank: 1, score: 8, reason: 'x' }] }).directions[0]!.identityScore).toBeNull();
   });
 
   test('the reader test scores 1 to 10 and a rewrite is optional', () => {

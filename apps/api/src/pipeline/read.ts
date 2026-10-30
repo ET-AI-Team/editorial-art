@@ -1,4 +1,4 @@
-import { MUST_SHOW_MAX, ReadOutput, type ReadDirection, type ReadHook, type SensitivityLevel } from '@editorial-art/shared-types';
+import { IDENTITY_CUES_MAX, IDENTITY_MAX, MUST_SHOW_MAX, ReadOutput, type IdentityEntry, type ReadDirection, type ReadHook, type SensitivityLevel } from '@editorial-art/shared-types';
 import { audit } from '../lib/audit';
 import { db } from '../lib/db';
 import { env } from '../lib/env';
@@ -11,6 +11,7 @@ import { BadModelOutput } from '../providers';
 import { chat, maybeCrash } from './ai';
 import { createBatch } from './batches';
 import { emitRequestStatus } from './events';
+import { mainSubject } from './identity';
 import { runReaderTest, type ReaderVerdict } from './reader-test';
 import { finalSensitivity, fold, realFacesAllowedFor, sensitivityFloor } from './guard/sensitivity';
 import { stripInstructions } from './guard/strip';
@@ -118,6 +119,21 @@ export function applyPeoplePolicy(
   });
 }
 
+function cleanCues(cues: string[]): string[] {
+  return [...new Set(cues.map((c) => stripInstructions(c, 120).text).filter(Boolean))].slice(0, IDENTITY_CUES_MAX);
+}
+
+/**
+ * Identity cues reach image and judge prompts, so they are cleaned like a direction. The main
+ * subject stays first; an entry the cleaning empties is dropped.
+ */
+export function cleanIdentity(identity: IdentityEntry[]): IdentityEntry[] {
+  return identity
+    .map((e) => ({ name: stripInstructions(e.name, 120).text, kind: e.kind, cues: cleanCues(e.cues) }))
+    .filter((e) => e.name)
+    .slice(0, IDENTITY_MAX);
+}
+
 function cleanDirection(d: ReadDirection): ReadDirection {
   return {
     ...d,
@@ -125,6 +141,7 @@ function cleanDirection(d: ReadDirection): ReadDirection {
     idea: stripInstructions(d.idea, 600).text || d.title,
     mustShow: d.mustShow.map((m) => stripInstructions(m, 120).text).filter(Boolean).slice(0, MUST_SHOW_MAX),
     whyItFits: stripInstructions(d.whyItFits, 200).text,
+    identityCues: cleanCues(d.identityCues),
     reason: stripInstructions(d.reason, 120).text,
     avoid: d.avoid.map((a) => stripInstructions(a, 80).text).filter(Boolean),
   };
@@ -144,10 +161,13 @@ export function cleanHook(h: ReadHook): ReadHook {
 }
 
 /** A reader-test rewrite replaces the idea only; style, people and avoid list stay as read. */
-export function applyReaderVerdict(d: ReadDirection, verdict: ReaderVerdict | undefined): { d: ReadDirection; readerScore: number | null; readerReason: string | null } {
-  if (!verdict) return { d, readerScore: null, readerReason: null };
+export function applyReaderVerdict(
+  d: ReadDirection,
+  verdict: ReaderVerdict | undefined
+): { d: ReadDirection; readerScore: number | null; readerIdentityScore: number | null; readerReason: string | null } {
+  if (!verdict) return { d, readerScore: null, readerIdentityScore: null, readerReason: null };
   const next = verdict.rewrite ? cleanDirection({ ...d, ...verdict.rewrite }) : d;
-  return { d: next, readerScore: verdict.score, readerReason: stripInstructions(verdict.reason, 300).text || null };
+  return { d: next, readerScore: verdict.score, readerIdentityScore: verdict.identityScore, readerReason: stripInstructions(verdict.reason, 300).text || null };
 }
 
 async function fail(requestId: string, publicId: string, code: string, reason: string): Promise<void> {
@@ -193,7 +213,7 @@ export async function runRead(requestId: string): Promise<void> {
             retryNote,
           }),
           temperature: 0.3,
-          maxTokens: 2200,
+          maxTokens: 2800,
         },
         ReadOutput,
         ESTIMATE_INR.read
@@ -242,6 +262,7 @@ export async function runRead(requestId: string): Promise<void> {
   if (directions.some((x) => !x.style)) return fail(request.id, request.publicId, 'STYLE_NOT_READY', 'No style is available for this story yet.');
 
   const hook = cleanHook(answer.hook);
+  const identity = cleanIdentity(answer.identity);
   const verdicts = await runReaderTest(
     { stage: 'reader_test', requestId: request.id },
     {
@@ -249,6 +270,7 @@ export async function runRead(requestId: string): Promise<void> {
       claim: hook.claim || answer.thesis,
       tone: answer.tone,
       level,
+      subject: mainSubject(identity),
       directions: directions.map(({ d }) => ({ ...d, people: d.peopleDepicted.filter((p) => p.how !== 'absent').map((p) => p.name) })),
     }
   );
@@ -270,16 +292,19 @@ export async function runRead(requestId: string): Promise<void> {
         sensitivityReasons: reasons,
         altTextSeed: answer!.altTextSeed,
         hook,
+        identity,
         truncatedForRead: forRead.truncated,
         model: env().EA_READ_MODEL,
         directions: {
-          create: tested.map(({ d, style, readerScore, readerReason }) => ({
+          create: tested.map(({ d, style, readerScore, readerIdentityScore, readerReason }) => ({
             rank: d.rank,
             title: d.title,
             idea: d.idea,
             mustShow: d.mustShow,
             whyItFits: d.whyItFits,
+            identityCues: d.identityCues,
             readerScore,
+            readerIdentityScore,
             readerReason,
             suggestedStyleId: style!.id,
             reason: d.reason,

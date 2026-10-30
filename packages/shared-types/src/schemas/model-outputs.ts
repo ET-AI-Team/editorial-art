@@ -62,6 +62,37 @@ export type ReadHook = z.infer<typeof ReadHook>;
 export const MUST_SHOW_MAX = 4;
 export const MustShow = z.array(z.string().min(2).max(120)).min(2).max(6);
 
+export const IdentityKind = z.enum(['company', 'person', 'institution', 'place', 'product']);
+export type IdentityKind = z.infer<typeof IdentityKind>;
+
+/** The model is asked for 2 to 5 cues and at most 3 entries; extras are tolerated and dropped in code. */
+export const IDENTITY_CUES_MAX = 5;
+export const IDENTITY_MAX = 3;
+
+/**
+ * Who a story is about, as a reader would recognise it in a picture without any text or logo:
+ * a brand colour, a landmark, a product shape, a public figure, a context marker. Only cues the
+ * model is sure of; an unsure cue is left out rather than guessed.
+ */
+export const IdentityEntry = z
+  .object({
+    name: z.string().min(1).max(120),
+    kind: IdentityKind,
+    cues: z.array(z.string().min(2).max(120)).max(8),
+  })
+  .strict();
+export type IdentityEntry = z.infer<typeof IdentityEntry>;
+
+/**
+ * The story's main subject first, then up to two other key actors. Empty when the story is about a
+ * broad topic with no single subject (inflation, monsoon prices), where identity does not apply.
+ */
+export const ReadIdentity = z.array(IdentityEntry).max(6);
+export type ReadIdentity = z.infer<typeof ReadIdentity>;
+
+/** Cues a direction or rewrite says it shows, copied from the identity. */
+const IdentityCues = z.array(z.string().max(120)).max(8).default([]);
+
 export const ReadDirection = z
   .object({
     rank: z.number().int().min(1).max(3),
@@ -71,6 +102,8 @@ export const ReadDirection = z
     mustShow: MustShow,
     /** One line linking the image to hook.claim. */
     whyItFits: z.string().min(1).max(200),
+    /** Which of the main subject's identity cues this idea shows; empty when none fit or there is no single subject. */
+    identityCues: IdentityCues,
     suggestedStyleSlug: Slug,
     reason: z.string().max(120),
     peopleDepicted: z.array(z.object({ name: z.string().max(120), how: PeopleHow }).strict()).max(6),
@@ -97,6 +130,7 @@ export const ReadOutput = z
     sensitivity: z.object({ level: SensitivityLevel, reasons: z.array(z.string().max(120)).max(4) }).strict(),
     altTextSeed: z.string().min(1).max(200),
     hook: ReadHook,
+    identity: ReadIdentity.default([]),
     directions: z.array(ReadDirection).max(3),
   })
   .strict()
@@ -288,14 +322,16 @@ export const ReaderRewrite = z
     idea: z.string().min(20).max(600),
     mustShow: MustShow,
     whyItFits: z.string().min(1).max(200),
+    identityCues: IdentityCues,
   })
   .strict();
 export type ReaderRewrite = z.infer<typeof ReaderRewrite>;
 
 /**
  * The reader test: would someone who has just read the headline connect each direction to the
- * story in two seconds? 1 to 10, with a reason, and a rewrite for any direction scored under 7
- * when one was asked for.
+ * story in two seconds? 1 to 10, with a reason, and a rewrite for any direction that fails when
+ * one was asked for. When the story has a single main subject, identityScore (1 to 10) says
+ * whether a reader would name that subject from the description alone, without the headline.
  */
 export const ReaderTestOutput = z
   .object({
@@ -305,6 +341,7 @@ export const ReaderTestOutput = z
           .object({
             rank: z.number().int().min(1).max(3),
             score: z.number().int().min(1).max(10),
+            identityScore: z.number().int().min(1).max(10).nullable().default(null),
             reason: z.string().max(300),
             rewrite: ReaderRewrite.nullable().default(null),
           })
@@ -316,11 +353,17 @@ export const ReaderTestOutput = z
   .strict();
 export type ReaderTestOutput = z.infer<typeof ReaderTestOutput>;
 
-/** Does a finished preview tell this article's story at a glance? 1 to 10, with a reason. */
+/**
+ * Does a finished preview tell this article's story at a glance? 1 to 10, with a reason. When the
+ * story has a single main subject, identityScore (1 to 10) says whether a reader would identify
+ * that company or person without the headline; null when there is none.
+ */
 export const StoryCheck = z
   .object({
     storyScore: z.number().int().min(1).max(10),
+    identityScore: z.number().int().min(1).max(10).nullable().default(null),
     reason: z.string().max(300),
+    identityReason: z.string().max(300).default(''),
   })
   .strict();
 export type StoryCheck = z.infer<typeof StoryCheck>;

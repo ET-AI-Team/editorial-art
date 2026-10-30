@@ -590,10 +590,10 @@ adminRouter.get(
     const id = idParam(req);
     const option = await db.option.findUnique({
       where: { id },
-      select: { id: true, previewInput: true, finalInput: true, storyScore: true, storyReason: true, storyRedraws: true, directionId: true },
+      select: { id: true, previewInput: true, finalInput: true, storyScore: true, storyReason: true, identityScore: true, identityReason: true, storyRedraws: true, directionId: true },
     });
     if (!option) throw ApiError.notFound('Option not found.');
-    const direction = await db.direction.findUnique({ where: { id: option.directionId }, select: { readerScore: true, readerReason: true } });
+    const direction = await db.direction.findUnique({ where: { id: option.directionId }, select: { readerScore: true, readerIdentityScore: true, readerReason: true } });
     const read = (v: unknown) => {
       const parsed = SentImageCall.safeParse(v);
       return parsed.success ? parsed.data : null;
@@ -601,8 +601,11 @@ adminRouter.get(
     const story = {
       score: option.storyScore,
       reason: option.storyReason,
+      identityScore: option.identityScore,
+      identityReason: option.identityReason,
       redraws: option.storyRedraws,
       readerScore: direction?.readerScore ?? null,
+      readerIdentityScore: direction?.readerIdentityScore ?? null,
       readerReason: direction?.readerReason ?? null,
     };
     res.json(AdminOptionInputs.parse({ optionId: option.id, preview: read(option.previewInput), final: read(option.finalInput), story }));

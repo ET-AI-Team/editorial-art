@@ -50,6 +50,20 @@ NEWS HOOK (work this out first; every direction is built on it)
 - hook.indianContext: concrete Indian markers the picture could use, if relevant (the RBI
   building on Mint Street, a kirana shelf, a mandi, a Mumbai local train), else "".
 
+SUBJECT IDENTITY (who the story is about, as a reader would recognise it without text or a logo)
+- identity: first the story's main subject, when the story is about one specific company, person,
+  institution, place or product; then at most 2 other key actors. Return [] when the story is about
+  a broad topic with no single subject (inflation, monsoon prices, a market-wide fall).
+- name: as in the article. kind: "company", "person", "institution", "place" or "product".
+- cues: 2 to 5 safe visual identifiers, never text or a logo: its signature brand colour, named,
+  with an approximate hex code only when well known (e.g. "Jio deep royal blue"); a landmark or
+  headquarters ("Jio World Centre, Mumbai BKC", "RBI headquarters on Mint Street", "Tata's Bombay
+  House"); a distinctive product or object shape ("JioFiber router", "Tata Nano silhouette"); a
+  public figure who embodies it ("Mukesh Ambani"); a context marker ("NSE listing bell").
+- Accuracy first: give only cues you are sure are true of this subject. Leave out any you are not
+  confident of; never invent a colour, building, product or person. Fewer true cues beat more.
+- A public figure given as a cue must also be listed in entities.people.
+
 SENSITIVITY RULES
 - NONE: earnings, launches, markets, policy explainers, deals, appointments.
 - ELEVATED: layoffs, fraud allegations, arrests, court cases, raids, scams, elections,
@@ -65,6 +79,10 @@ DIRECTIONS RULES
   (a different subject, scene or angle on the hook), not only in wording, setting or colour.
   Do not return three variations of one idea.
 - Each idea shows THIS story's specific subject and the tension acting on it.
+- When identity has a main subject, a reader should know who the story is about at a glance: build
+  the idea on its identity cues where they fit naturally (its colour on the hero object, its
+  landmark, its product, its people). An idea that would fit any company in the sector is too
+  generic. Do not force a cue into an idea it does not suit.
 - Anchor the subject in something a reader recognises at a glance without a logo or text: a
   landmark building (Bombay House for Tata, the BSE tower on Dalal Street, the RBI building on
   Mint Street), the product itself, its signature colour, its stores, uniforms or vehicles, the
@@ -87,6 +105,8 @@ DIRECTIONS RULES
   "Tata Sons' Bombay House facade", "two hands pulling a boardroom table apart", "a rising pile
   of onions and tomatoes". No logos, no readable text, no labels.
 - whyItFits: one line, at most 160 characters, linking the image to hook.claim.
+- identityCues: the main subject's cues this idea shows, copied exactly from identity; [] when
+  none fit or identity is empty.
 - Rank 1 is the idea a reader of the headline connects to the story fastest that is still
   striking, accurate and fair.
 - Never put text, letters, numbers, logos, brand marks, charts with labels, or headlines
@@ -126,6 +146,7 @@ OUTPUT SHAPE
     "claim": string, "actors": [string], "tension": string, "stake": string,
     "readerTakeaway": string, "indianContext": string
   },
+  "identity": [{ "name": string, "kind": string, "cues": [string] }],
   "directions": [
     {
       "rank": 1,
@@ -133,6 +154,7 @@ OUTPUT SHAPE
       "idea": string,
       "mustShow": [string],
       "whyItFits": string,
+      "identityCues": [string],
       "suggestedStyleSlug": string,
       "reason": string,
       "peopleDepicted": [{ "name": string, "how": "illustrated" | "symbolised" | "absent" }],
@@ -168,6 +190,13 @@ tension is visible as an action or contrast.
 Be strict: most competent but generic ideas are a 5 or 6. A name attached to a generic object
 ("the Tata boardroom", "the company's headquarters") shows nothing a reader can recognise: score
 it as generic.
+When you are given the story's main subject, also score identityScore from 1 to 10 for a second
+question: from the description alone, without the headline, would a reader name that specific
+company or person?
+9-10: unmistakably this subject (its signature colour on its own product, its landmark, its people).
+6-8: most likely this subject, though a close rival could fit.
+3-5: the right sector or topic, but any company or person in it would fit.
+1-2: nothing in the image points to the subject.
 Score down: stock cliches (a lightbulb, a rocket, a generic bull and bear, a handshake, a glowing
 brain, a generic plant sprouting, coin piles, chess pieces, puzzle pieces, a seesaw) unless clearly
 twisted to this story; anything that needs readable text, labels or logos to make sense; anything too

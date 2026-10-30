@@ -142,6 +142,8 @@ export const DirectionDto = z.object({
   mustShow: z.array(z.string()),
   /** One line on how the image tells the story. Empty for directions read before it existed. */
   whyItFits: z.string(),
+  /** Which of the main subject's identity cues the idea shows. Empty when none fit, or for directions read before it existed. */
+  identityCues: z.array(z.string()),
   style: StyleRef,
   reason: z.string(),
 });
@@ -567,12 +569,20 @@ export type SentImage = z.infer<typeof SentImage>;
 export const SentImageCall = z.object({ model: z.string().nullable(), prompt: z.string(), images: z.array(SentImage) });
 export type SentImageCall = z.infer<typeof SentImageCall>;
 
-/** How well an option tells its story: the image check, its redraws, and its direction's reader test. Null scores were never measured. */
+/**
+ * How well an option tells its story: the image check, its redraws, and its direction's reader
+ * test. Null scores were never measured; identity scores are also null when the story has no
+ * single main subject.
+ */
 export const OptionStory = z.object({
   score: z.number().int().min(1).max(10).nullable(),
   reason: z.string().nullable(),
+  /** Without the headline, would a reader identify the company or person this is about? */
+  identityScore: z.number().int().min(1).max(10).nullable(),
+  identityReason: z.string().nullable(),
   redraws: z.number().int().min(0),
   readerScore: z.number().int().min(1).max(10).nullable(),
+  readerIdentityScore: z.number().int().min(1).max(10).nullable(),
   readerReason: z.string().nullable(),
 });
 export type OptionStory = z.infer<typeof OptionStory>;

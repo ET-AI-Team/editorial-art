@@ -25,8 +25,14 @@ import { BadModelOutput, ProviderRefusal, ProviderTimeout, ProviderUnavailable, 
  *   FAKE_STORY_ALWAYS_LOW the story check scores the "house" idea 3 every time
  *   FAKE_STORY_WORSE      the story check scores the "house" idea 5, then 2
  *   FAKE_STORY_FAIL       the story check's model errors (HTTP 500)
+ *   FAKE_TOPIC            the read finds a broad-topic story: no identity, so nothing scores identity
+ *   FAKE_READER_GENERIC   the reader test scores direction 3's identity 3 and rewrites it on the
+ *                         subject's cues; the rewrite's identity scores 9
+ *   FAKE_IDENTITY_LOW     the story check scores the "house" idea's identity 3 the first time, 8 after
+ *   FAKE_IDENTITY_MISSING the story check answers without an identity score
  *
- * Without those, the story check scores the three fake ideas 7, 9 and 8, so a batch reorders.
+ * Without those, the read's main subject is "Example Group", and the story check scores the three
+ * fake ideas 7, 9 and 8 for story and the same for identity, so a batch reorders.
  */
 
 const hueOf = (s: string) => parseInt(createHash('sha256').update(s).digest('hex').slice(0, 6), 16) % 360;
@@ -156,7 +162,7 @@ function availableSlugs(user: string): string[] {
 
 const HOUSE = 'A large old house';
 
-function fakeStory(user: string, first: boolean): { storyScore: number; reason: string } {
+function fakeStoryScore(user: string, first: boolean): { storyScore: number; reason: string } {
   if (user.includes(HOUSE)) {
     if (user.includes('FAKE_STORY_ALWAYS_LOW')) return { storyScore: 3, reason: 'A house says nothing about this boardroom story.' };
     if (user.includes('FAKE_STORY_WORSE')) return first ? { storyScore: 5, reason: 'Show the boardroom, not a house.' } : { storyScore: 2, reason: 'Still a house.' };
@@ -167,14 +173,49 @@ function fakeStory(user: string, first: boolean): { storyScore: number; reason: 
   return { storyScore: 9, reason: 'The calm ticker against the storm tells it.' };
 }
 
-/** The reader test: everything passes unless a magic word marks direction 2 as weak. */
+/** Identity is scored only when the check is told the subject; by default it matches the story score. */
+function fakeStory(user: string, first: boolean): { storyScore: number; identityScore?: number; reason: string; identityReason?: string } {
+  const story = fakeStoryScore(user, first);
+  if (!user.includes('THE SUBJECT:') || user.includes('FAKE_IDENTITY_MISSING')) return story;
+  if (user.includes(HOUSE) && user.includes('FAKE_IDENTITY_LOW')) {
+    return first
+      ? { ...story, identityScore: 3, identityReason: 'Any company could own this house; make the teal and the Example Tower prominent.' }
+      : { ...story, identityScore: 8, identityReason: 'The teal tower says Example Group.' };
+  }
+  return { ...story, identityScore: story.storyScore, identityReason: 'The Example Group teal is there.' };
+}
+
+/** The fake read's identity: Example Group first, with cues a fake image can be built on. */
+export const FAKE_IDENTITY = [
+  { name: 'Example Group', kind: 'company', cues: ['Example Group teal #0F7C7C', 'the Example Tower, a stepped white tower in Mumbai', 'Asha Rao'] },
+  { name: 'Mumbai', kind: 'place', cues: ['the Bandra-Worli Sea Link'] },
+];
+
+/** The reader test: everything passes unless a magic word marks direction 2 (story) or 3 (identity) as weak. */
 function fakeReader(user: string): unknown {
   const ranks = [...user.matchAll(/<direction rank="(\d)">/g)].map((m) => Number(m[1]));
   const rewriting = user.includes('REWRITE every direction');
   const weak = user.includes('FAKE_READER_LOW') || user.includes('FAKE_READER_WORSE');
+  const subject = user.includes('MAIN SUBJECT:');
+  const identity = (score: number) => (subject ? { identityScore: score } : {});
   return {
     directions: ranks.map((rank) => {
-      if (!rewriting) return { rank, score: user.includes('FAKE_READER_WORSE') ? 4 : 9, reason: 'The split boardroom table is this story.' };
+      if (!rewriting) return { rank, score: user.includes('FAKE_READER_WORSE') ? 4 : 9, ...identity(9), reason: 'The split boardroom table is this story.' };
+      if (subject && user.includes('FAKE_READER_GENERIC') && rank === 3) {
+        return {
+          rank,
+          score: 8,
+          identityScore: 3,
+          reason: 'Any company could own this old house.',
+          rewrite: {
+            title: 'The teal tower splits',
+            idea: 'The stepped white Example Tower in Mumbai, washed in Example Group teal, splits down the middle as two hands pull it apart.',
+            mustShow: ['the stepped white Example Tower in teal', 'two hands pulling it apart'],
+            whyItFits: 'The group itself is pulled apart at the top.',
+            identityCues: ['Example Group teal #0F7C7C', 'the Example Tower, a stepped white tower in Mumbai'],
+          },
+        };
+      }
       if (weak && rank === 2) {
         return {
           rank,
@@ -188,7 +229,7 @@ function fakeReader(user: string): unknown {
           },
         };
       }
-      return { rank, score: 8, reason: 'A reader of the headline gets it.', rewrite: null };
+      return { rank, score: 8, ...identity(8), reason: 'A reader of the headline gets it.', rewrite: null };
     }),
   };
 }
@@ -223,6 +264,7 @@ function fakeAnswer(p: ChatJsonParams): unknown {
           readerTakeaway: 'The fight is real, but investors are not worried.',
           indianContext: 'a Mumbai boardroom',
         },
+        identity: p.user.includes('FAKE_TOPIC') ? [] : FAKE_IDENTITY,
         directions:
           level === 'BLOCKED'
             ? []
@@ -232,6 +274,7 @@ function fakeAnswer(p: ChatJsonParams): unknown {
                 idea,
                 mustShow: [['two chess kings', 'a crack across the table'], ['a calm ticker river', 'a glass tower', 'a storm cloud'], ['an old house', 'one dark window'] ][i]!,
                 whyItFits: 'Shows the dispute and the calm market at once.',
+                identityCues: p.user.includes('FAKE_TOPIC') ? [] : [[], ['the Example Tower, a stepped white tower in Mumbai'], ['Example Group teal #0F7C7C']][i]!,
                 suggestedStyleSlug: slugs[i % slugs.length]!,
                 reason: 'Fits an analytical markets story.',
                 peopleDepicted: people.length ? [{ name: 'Asha Rao', how: 'illustrated' }] : [],

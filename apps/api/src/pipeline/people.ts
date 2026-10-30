@@ -58,7 +58,7 @@ export async function activeLikenessNames(actorRole: string): Promise<{ id: stri
  */
 export function realFacesNote(actorRole: string): string {
   if (!realPeopleAllowed(actorRole)) return '';
-  return 'REAL FACES\nNamed public figures (politicians, executives, officials, celebrities; never minors or private people) can be drawn as a respectful, recognisable likeness in illustrated styles. When the story turns on such people, at least one direction should show the central person with "how": "illustrated", acting out the story. The people policy still applies.\n\n';
+  return 'REAL FACES\nNamed public figures (politicians, executives, officials, celebrities; never minors or private people) can be drawn as a respectful, recognisable likeness in illustrated styles. When the story turns on such people, or a public figure among the identity cues embodies the main subject (its founder, chair or chief executive), at least one direction should show that person with "how": "illustrated", acting out the story, when it fits the story naturally. The people policy still applies.\n\n';
 }
 
 const key = (name: string) => fold(name).replace(/\s+/g, ' ').trim();

@@ -17,7 +17,8 @@ import { buildPreviewPrompt, imageLabels } from './prompts';
 import { describeCall, routedImage } from './image-routing';
 import { checkLikeness, LIKENESS_AGAIN, likenessStyle, WeakLikeness } from './likeness-check';
 import { batchOutcome, moveBatch, moveOption } from './state';
-import { checkStory, pickStoryRedraw, redrawWins, storyRedrawNote, type StoryRow } from './story-check';
+import { cuesToStrengthen, mainSubject } from './identity';
+import { checkStory, identityRedrawNote, pickStoryRedraw, redrawNeeds, redrawWins, storyRedrawNote, type StoryRow } from './story-check';
 
 /**
  * Stage 3 (Step 6.5): one preview. The model the admin setting chose first; on a refusal or
@@ -80,9 +81,32 @@ async function checkImage(ctx: OptionContext, image: ImageData): Promise<{ maste
   return { master, small, hash: hash.toString(16).padStart(16, '0') };
 }
 
-/** What the story check is told: the article's title (or the read's headline), what changed, and the idea. */
+/**
+ * What the story check is told: the article's title (or the read's headline), what changed, the
+ * idea, and the main subject with its cues (none for a broad-topic story).
+ */
 function storyInputFor(ctx: OptionContext) {
-  return { title: ctx.request.title || ctx.brief.headline, claim: ctx.brief.hook?.claim || ctx.brief.thesis, idea: ctx.direction.idea };
+  const subject = mainSubject(ctx.brief.identity);
+  return {
+    title: ctx.request.title || ctx.brief.headline,
+    claim: ctx.brief.hook?.claim || ctx.brief.thesis,
+    idea: ctx.direction.idea,
+    subject: subject ? { name: subject.name, cues: subject.cues } : null,
+  };
+}
+
+/**
+ * The note a redraw carries: what would make the story clearer when the story scored low, and
+ * which identity cues to make more prominent when the identity did.
+ */
+export function redrawNoteFor(ctx: Pick<OptionContext, 'option' | 'brief' | 'direction'>): string {
+  const needs = redrawNeeds(ctx.option);
+  const subject = mainSubject(ctx.brief.identity);
+  const notes = [
+    needs.story || !needs.identity ? storyRedrawNote(ctx.option.storyReason) : '',
+    needs.identity && subject ? identityRedrawNote(subject.name, cuesToStrengthen(ctx.brief.identity, ctx.direction.identityCues)) : '',
+  ];
+  return notes.filter(Boolean).join('\n');
 }
 
 /**
@@ -107,7 +131,7 @@ export async function runPreview(optionId: string): Promise<void> {
   const redraw = isStoryRedraw(ctx);
   const { images, sources, refCount, likenessPhotoCount, series } = await inputImages(ctx);
   const base = previewPromptFor(ctx, refCount, likenessPhotoCount, series);
-  const prompt = redraw ? `${base}\n\n${storyRedrawNote(ctx.option.storyReason)}` : base;
+  const prompt = redraw ? `${base}\n\n${redrawNoteFor(ctx)}` : base;
   const { previewModel } = await imageModels();
   const stage = redraw ? 'story_redraw' : 'preview';
 
@@ -150,9 +174,11 @@ export async function runPreview(optionId: string): Promise<void> {
   }
 
   const story = produced!.story;
-  if (redraw && !redrawWins(ctx.option.storyScore, story?.storyScore ?? null)) {
-    // The first preview told the story at least as well (or the redraw could not be scored): keep it.
-    logger.info({ eaRequestId: ctx.request.publicId, optionId: ctx.option.id, first: ctx.option.storyScore, redraw: story?.storyScore ?? null }, 'story_redraw_kept_first');
+  const scores = { storyScore: story?.storyScore ?? null, identityScore: story?.identityScore ?? null };
+  const firstScores = { storyScore: ctx.option.storyScore, identityScore: ctx.option.identityScore };
+  if (redraw && !redrawWins(firstScores, scores)) {
+    // The first preview did at least as well (or the redraw could not be scored): keep it.
+    logger.info({ eaRequestId: ctx.request.publicId, optionId: ctx.option.id, first: firstScores, redraw: scores }, 'story_redraw_kept_first');
     await restorePreview(refOf(ctx));
     return;
   }
@@ -173,13 +199,15 @@ export async function runPreview(optionId: string): Promise<void> {
       previewInput: produced!.sent,
       likenessWeak: produced!.likenessWeak,
       failureReason: null,
-      storyScore: story?.storyScore ?? null,
+      storyScore: scores.storyScore,
       storyReason: story?.reason || null,
+      identityScore: scores.identityScore,
+      identityReason: story?.identityReason || null,
     },
     ['GENERATING']
   );
   if (!moved) return;
-  if (redraw) logger.info({ eaRequestId: ctx.request.publicId, optionId: ctx.option.id, first: ctx.option.storyScore, redraw: story?.storyScore ?? null }, 'story_redraw_adopted');
+  if (redraw) logger.info({ eaRequestId: ctx.request.publicId, optionId: ctx.option.id, first: firstScores, redraw: scores }, 'story_redraw_adopted');
   else await db.styleReference.updateMany({ where: { id: { in: ctx.option.referenceIds } }, data: { usageCount: { increment: 1 } } });
   emitPreviewReady(ctx.request.publicId, ctx.batch.id, ctx.option.id, upload.url);
   await settleBatch(ctx.batch.id, ctx.request.publicId);
@@ -247,7 +275,7 @@ async function startStoryRedraw(batchId: string, option: StoryRow & { requestId:
   const { count } = await db.option.updateMany({ where: { id: option.id, state: 'PREVIEW_READY', storyRedraws: 0 }, data: { state: 'PENDING', storyRedraws: { increment: 1 } } });
   if (count !== 1) return 'raced';
   await enqueue.preview({ optionId: option.id }, 'redraw');
-  logger.info({ batchId, optionId: option.id, storyScore: option.storyScore }, 'story_redraw');
+  logger.info({ batchId, optionId: option.id, storyScore: option.storyScore, identityScore: option.identityScore }, 'story_redraw');
   return 'started';
 }
 
@@ -258,7 +286,7 @@ async function startStoryRedraw(batchId: string, option: StoryRow & { requestId:
 export async function settleBatch(batchId: string, requestPublicId: string, depth = 0): Promise<void> {
   const options = await db.option.findMany({
     where: { batchId },
-    select: { id: true, index: true, state: true, storyScore: true, storyRedraws: true, requestId: true },
+    select: { id: true, index: true, state: true, storyScore: true, identityScore: true, storyRedraws: true, requestId: true },
   });
   const outcome = batchOutcome(options.map((o) => o.state));
   if (!outcome) return;
