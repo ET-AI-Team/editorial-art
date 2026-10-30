@@ -40,6 +40,7 @@ export function optionDto(o: Option & { pack: PublishPack | null }, styles: Map<
     pack: o.pack ? packDto(o.pack) : null,
     references: o.referenceIds.map((id) => refs.get(id)).filter((r): r is OptionReference => !!r),
     likenessWeak: o.likenessWeak,
+    logoOk: o.logoOk,
   };
 }
 
@@ -62,6 +63,7 @@ export function requestDetail(r: RequestWithEverything, styles: Map<string, Styl
         mustShow: d.mustShow,
         whyItFits: d.whyItFits,
         identityCues: d.identityCues,
+        useLogo: d.useLogo,
         reason: d.reason,
         style: style ? styleRef(style) : { id: d.suggestedStyleId, slug: 'unknown', label: 'Unknown' },
       };

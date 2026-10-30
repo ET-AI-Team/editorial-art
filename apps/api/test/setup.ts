@@ -22,6 +22,8 @@ const defaults: Record<string, string> = {
   EA_PREVIEW_FALLBACK_MODEL: 'gemini-3-pro-image',
   EA_FINAL_MODEL: 'gemini-3-pro-image',
   EA_FINAL_FALLBACK_MODEL: 'gpt-image-2',
+  // Logo lookups reach Wikidata: off unless a test turns them on with a mocked Wikimedia.
+  EA_BRAND_LOGOS: 'off',
 };
 
 for (const [key, value] of Object.entries(defaults)) {

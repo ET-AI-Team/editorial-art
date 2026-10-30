@@ -226,7 +226,7 @@ describe('model outputs', () => {
     expect(StoryCheck.safeParse({ storyScore: 7, reason: 'The split table reads.' }).success).toBe(true);
     expect(StoryCheck.safeParse({ storyScore: 0, reason: 'x' }).success).toBe(false);
     expect(StoryCheck.safeParse({ storyScore: 7.5, reason: 'x' }).success).toBe(false);
-    const story = { score: null, reason: null, identityScore: null, identityReason: null, redraws: 0, readerScore: null, readerIdentityScore: null, readerReason: null };
+    const story = { score: null, reason: null, identityScore: null, identityReason: null, redraws: 0, readerScore: null, readerIdentityScore: null, readerReason: null, logoOk: null };
     expect(AdminOptionInputs.safeParse({ optionId: '11111111-1111-4111-8111-111111111111', preview: null, final: null, story }).success).toBe(true);
     expect(AdminOptionInputs.safeParse({ optionId: '11111111-1111-4111-8111-111111111111', preview: null, final: null }).success).toBe(false);
   });
@@ -250,7 +250,7 @@ describe('model outputs', () => {
   });
 
   test('the story check may score identity, null when the story has no single subject', () => {
-    expect(StoryCheck.parse({ storyScore: 7, reason: 'x' })).toEqual({ storyScore: 7, identityScore: null, reason: 'x', identityReason: '' });
+    expect(StoryCheck.parse({ storyScore: 7, reason: 'x' })).toEqual({ storyScore: 7, identityScore: null, reason: 'x', identityReason: '', logoOk: null });
     expect(StoryCheck.parse({ storyScore: 7, identityScore: 4, reason: 'x', identityReason: 'Show the blue.' }).identityScore).toBe(4);
     expect(StoryCheck.safeParse({ storyScore: 7, identityScore: 11, reason: 'x' }).success).toBe(false);
     expect(ReaderTestOutput.parse({ directions: [{ rank: 1, score: 8, reason: 'x' }] }).directions[0]!.identityScore).toBeNull();

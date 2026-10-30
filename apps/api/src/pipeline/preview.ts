@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { env } from '../lib/env';
 import { StageError } from '../lib/errors';
 import { checkCopy, cropToAspect, dHash, hammingDistance, isBlank, losslessMaster } from '../lib/image';
@@ -17,6 +18,7 @@ import { buildPreviewPrompt, imageLabels } from './prompts';
 import { describeCall, routedImage } from './image-routing';
 import { checkLikeness, LIKENESS_AGAIN, likenessStyle, WeakLikeness } from './likeness-check';
 import { batchOutcome, moveBatch, moveOption } from './state';
+import { LOGO_AGAIN } from './brand-logo';
 import { cuesToStrengthen, mainSubject } from './identity';
 import { checkStory, identityRedrawNote, pickStoryRedraw, redrawNeeds, redrawWins, storyRedrawNote, type StoryRow } from './story-check';
 
@@ -32,18 +34,30 @@ const NEAR_DUPLICATE = 8;
 export const NO_TEXT_AGAIN =
   'IMPORTANT: the previous attempt had writing in it. Leave every surface blank: no words, letters, numbers, labels, currency symbols or signs on any object, building, boat, flag, screen, coin or chart.';
 
+/**
+ * What the writing check asks. With an official logo it is shown the logo as image 2: that logo
+ * is allowed and reported apart, and any other writing still counts.
+ */
+export function previewTextUser(logoName: string | null): string {
+  if (!logoName) {
+    return 'Does this image contain any readable letters, words, numbers, currency signs or text-like marks anywhere, including on objects, signs, flags, coins or screens? Return only JSON: { "hasText": boolean, "where": string } where "where" names the spot in a few words, or is empty.';
+  }
+  return `Image 2 is the official ${logoName} logo. The official ${logoName} logo or wordmark is allowed on image 1; any other text is not. Does image 1 contain any readable letters, words, numbers, currency signs or text-like marks anywhere, including on objects, signs, flags, coins or screens, other than that logo? Return only JSON: { "hasText": boolean, "allowedLogo": boolean, "where": string } where "hasText" is true only for writing other than the allowed logo, "allowedLogo" is true when the allowed logo appears, and "where" names the spot of any other writing in a few words, or is empty.`;
+}
+
 /** One cheap vision call: previews are what editors judge, so writing on them is caught here. */
-async function hasWriting(ctx: OptionContext, webp: Buffer, stage = 'preview_check'): Promise<PreviewTextCheck> {
+async function hasWriting(ctx: OptionContext, webp: Buffer, logo: Buffer | null, stage = 'preview_check'): Promise<PreviewTextCheck> {
+  const logoSmall = logo ? await sharp(logo).resize(512, 512, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 85 }).toBuffer() : null;
   return chat(
     { stage, requestId: ctx.request.id, optionId: ctx.option.id },
     {
       kind: 'preview_text',
       model: env().EA_JUDGE_MODEL,
       system: 'You check illustrations for writing. Answer only with JSON.',
-      user: 'Does this image contain any readable letters, words, numbers, currency signs or text-like marks anywhere, including on objects, signs, flags, coins or screens? Return only JSON: { "hasText": boolean, "where": string } where "where" names the spot in a few words, or is empty.',
-      images: [{ buffer: webp, mimeType: 'image/webp' }],
+      user: previewTextUser(logoSmall ? (ctx.logo?.name ?? null) : null),
+      images: [{ buffer: webp, mimeType: 'image/webp' }, ...(logoSmall ? [{ buffer: logoSmall, mimeType: 'image/webp' }] : [])],
       temperature: 0,
-      maxTokens: 60,
+      maxTokens: 80,
     },
     PreviewTextCheck,
     ESTIMATE_INR.previewTextCheck
@@ -62,6 +76,7 @@ export function previewPromptFor(ctx: OptionContext, refCount: number, likenessP
     refCount,
     likenessPhotoCount,
     series,
+    logoName: ctx.logo?.name ?? null,
   });
 }
 
@@ -85,13 +100,14 @@ async function checkImage(ctx: OptionContext, image: ImageData): Promise<{ maste
  * What the story check is told: the article's title (or the read's headline), what changed, the
  * idea, and the main subject with its cues (none for a broad-topic story).
  */
-function storyInputFor(ctx: OptionContext) {
+function storyInputFor(ctx: OptionContext, logoImage: ImageData | null) {
   const subject = mainSubject(ctx.brief.identity);
   return {
     title: ctx.request.title || ctx.brief.headline,
     claim: ctx.brief.hook?.claim || ctx.brief.thesis,
     idea: ctx.direction.idea,
     subject: subject ? { name: subject.name, cues: subject.cues } : null,
+    logo: ctx.logo && logoImage ? { name: ctx.logo.name, image: logoImage.buffer } : null,
   };
 }
 
@@ -103,8 +119,9 @@ export function redrawNoteFor(ctx: Pick<OptionContext, 'option' | 'brief' | 'dir
   const needs = redrawNeeds(ctx.option);
   const subject = mainSubject(ctx.brief.identity);
   const notes = [
-    needs.story || !needs.identity ? storyRedrawNote(ctx.option.storyReason) : '',
+    needs.story || (!needs.identity && !needs.logo) ? storyRedrawNote(ctx.option.storyReason) : '',
     needs.identity && subject ? identityRedrawNote(subject.name, cuesToStrengthen(ctx.brief.identity, ctx.direction.identityCues)) : '',
+    needs.logo ? LOGO_AGAIN : '',
   ];
   return notes.filter(Boolean).join('\n');
 }
@@ -129,7 +146,7 @@ export async function runPreview(optionId: string): Promise<void> {
   await moveBatch(ctx.batch.id, 'RUNNING', {}, ['QUEUED']);
 
   const redraw = isStoryRedraw(ctx);
-  const { images, sources, refCount, likenessPhotoCount, series } = await inputImages(ctx);
+  const { images, sources, refCount, likenessPhotoCount, series, logoImage } = await inputImages(ctx);
   const base = previewPromptFor(ctx, refCount, likenessPhotoCount, series);
   const prompt = redraw ? `${base}\n\n${redrawNoteFor(ctx)}` : base;
   const { previewModel } = await imageModels();
@@ -138,22 +155,22 @@ export async function runPreview(optionId: string): Promise<void> {
   let produced: (Awaited<ReturnType<typeof checkImage>> & { model: string; sent: SentImageCall; story: StoryCheck | null; likenessWeak: boolean }) | undefined;
   let currentPrompt = prompt;
   for (let pass = 0; pass < 2 && !produced; pass++) {
-    const request = { stage: 'preview' as const, model: previewModel, imageSize: env().EA_PREVIEW_IMAGE_SIZE, prompt: currentPrompt, images, sources, likenessNames: ctx.likenessNames };
+    const request = { stage: 'preview' as const, model: previewModel, imageSize: env().EA_PREVIEW_IMAGE_SIZE, prompt: currentPrompt, images, sources, likenessNames: ctx.likenessNames, logoName: ctx.logo?.name ?? null };
     // Recorded before the call, so a preview that fails still shows what was sent. A redraw keeps
     // the first preview's record until its own image replaces that preview.
-    if (!redraw) await db.option.update({ where: { id: ctx.option.id }, data: { previewInput: describeCall(previewModel, currentPrompt, sources, imageLabels(sources.map((s) => s.role), ctx.likenessNames)) } });
+    if (!redraw) await db.option.update({ where: { id: ctx.option.id }, data: { previewInput: describeCall(previewModel, currentPrompt, sources, imageLabels(sources.map((s) => s.role), ctx.likenessNames, ctx.logo?.name)) } });
     const call = { stage, requestId: ctx.request.id, optionId: ctx.option.id };
     const { result, model, sent } = await routedImage(call, request);
     const image = result.image;
     try {
       const checked = await checkImage(ctx, image);
       const [writing, story] = await Promise.all([
-        hasWriting(ctx, checked.small, redraw ? 'story_redraw' : 'preview_check').catch((error: unknown) => {
+        hasWriting(ctx, checked.small, logoImage?.buffer ?? null, redraw ? 'story_redraw' : 'preview_check').catch((error: unknown) => {
           // A failed check must not cost the editor an option; the final judge checks again.
           if (error instanceof StageError && error.code === 'SPEND_CAP_REACHED') throw error;
-          return { hasText: false, where: '' };
+          return { hasText: false, allowedLogo: false, where: '' };
         }),
-        checkStory({ stage: 'story_check', requestId: ctx.request.id, optionId: ctx.option.id }, checked.small, storyInputFor(ctx)),
+        checkStory({ stage: 'story_check', requestId: ctx.request.id, optionId: ctx.option.id }, checked.small, storyInputFor(ctx, logoImage)),
       ]);
       if (writing.hasText) throw new BadModelOutput(`The image had writing in it (${writing.where || 'somewhere'}).`);
       const likenessWeak = await checkLikeness(call, ctx.likenessNames, checked.small, images.slice(refCount, refCount + likenessPhotoCount), pass === 1);
@@ -174,8 +191,8 @@ export async function runPreview(optionId: string): Promise<void> {
   }
 
   const story = produced!.story;
-  const scores = { storyScore: story?.storyScore ?? null, identityScore: story?.identityScore ?? null };
-  const firstScores = { storyScore: ctx.option.storyScore, identityScore: ctx.option.identityScore };
+  const scores = { storyScore: story?.storyScore ?? null, identityScore: story?.identityScore ?? null, logoOk: story?.logoOk ?? null };
+  const firstScores = { storyScore: ctx.option.storyScore, identityScore: ctx.option.identityScore, logoOk: ctx.option.logoOk };
   if (redraw && !redrawWins(firstScores, scores)) {
     // The first preview did at least as well (or the redraw could not be scored): keep it.
     logger.info({ eaRequestId: ctx.request.publicId, optionId: ctx.option.id, first: firstScores, redraw: scores }, 'story_redraw_kept_first');
@@ -203,6 +220,7 @@ export async function runPreview(optionId: string): Promise<void> {
       storyReason: story?.reason || null,
       identityScore: scores.identityScore,
       identityReason: story?.identityReason || null,
+      logoOk: scores.logoOk,
     },
     ['GENERATING']
   );
@@ -275,7 +293,7 @@ async function startStoryRedraw(batchId: string, option: StoryRow & { requestId:
   const { count } = await db.option.updateMany({ where: { id: option.id, state: 'PREVIEW_READY', storyRedraws: 0 }, data: { state: 'PENDING', storyRedraws: { increment: 1 } } });
   if (count !== 1) return 'raced';
   await enqueue.preview({ optionId: option.id }, 'redraw');
-  logger.info({ batchId, optionId: option.id, storyScore: option.storyScore, identityScore: option.identityScore }, 'story_redraw');
+  logger.info({ batchId, optionId: option.id, storyScore: option.storyScore, identityScore: option.identityScore, logoOk: option.logoOk }, 'story_redraw');
   return 'started';
 }
 
@@ -286,7 +304,7 @@ async function startStoryRedraw(batchId: string, option: StoryRow & { requestId:
 export async function settleBatch(batchId: string, requestPublicId: string, depth = 0): Promise<void> {
   const options = await db.option.findMany({
     where: { batchId },
-    select: { id: true, index: true, state: true, storyScore: true, identityScore: true, storyRedraws: true, requestId: true },
+    select: { id: true, index: true, state: true, storyScore: true, identityScore: true, logoOk: true, storyRedraws: true, requestId: true },
   });
   const outcome = batchOutcome(options.map((o) => o.state));
   if (!outcome) return;

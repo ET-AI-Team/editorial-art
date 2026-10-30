@@ -41,6 +41,8 @@ export interface ReaderTestInput {
   level: SensitivityLevel;
   /** The story's main subject; null or absent for a broad-topic story, where identity is not scored. */
   subject?: Pick<IdentityEntry, 'name' | 'kind' | 'cues'> | null;
+  /** The subject's official logo may go on a hero object, so a rewrite says whether it fits. */
+  logo?: boolean;
   directions: ReaderDirection[];
 }
 
@@ -93,7 +95,11 @@ export function buildReaderTestUser(input: ReaderTestInput, opts: { rewrite: boo
     const identityRule = subject
       ? `\n- Make ${oneLine(subject.name)} recognisable without the headline, through its visual identity where it fits the idea naturally${
           subject.cues.length ? `: ${subject.cues.map(oneLine).join('; ')}` : ''
-        }. identityCues lists the ones the rewrite shows, copied exactly, or [] when none fit.`
+        }. identityCues lists the ones the rewrite shows, copied exactly, or [] when none fit.${
+          input.logo
+            ? `\n- useLogo: true only when the hero object would really carry ${oneLine(subject.name)}'s official logo (its product, packaging, store front or vehicle) and the logo helps a reader; false for a metaphor, a landmark or a person. Never describe the logo in the idea.`
+            : ''
+        }`
       : '';
     parts.push(
       `REWRITE every direction you score ${failing}: one new idea for the same rank that a reader of this headline would connect to the story at once, so it would score 8 or more. Rules for a rewrite:
@@ -109,7 +115,7 @@ Directions that pass get "rewrite": null.`
   }
   const identityShape = subject ? `,\n      "identityScore": 1-10 (would a reader name ${oneLine(subject.name)} from the idea alone, without the headline?)` : '';
   const rewriteShape = opts.rewrite
-    ? `,\n      "rewrite": null | { "title": string (at most 60 characters), "idea": string, "mustShow": [string], "whyItFits": string${subject ? ', "identityCues": [string]' : ''} }`
+    ? `,\n      "rewrite": null | { "title": string (at most 60 characters), "idea": string, "mustShow": [string], "whyItFits": string${subject ? ', "identityCues": [string]' : ''}${subject && input.logo ? ', "useLogo": boolean' : ''} }`
     : '';
   parts.push(`Return only JSON:
 {

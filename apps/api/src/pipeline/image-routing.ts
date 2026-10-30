@@ -28,6 +28,8 @@ export interface ImageRequest {
   images: ImageData[];
   sources: SentImage[];
   likenessNames: string[];
+  /** The brand whose official logo is attached, if any. */
+  logoName?: string | null;
 }
 
 export function describeCall(model: string, prompt: string, sources: SentImage[], labels: string[]): SentImageCall {
@@ -37,7 +39,8 @@ export function describeCall(model: string, prompt: string, sources: SentImage[]
 export async function routedImage(ctx: CallContext, req: ImageRequest): Promise<RoutedImage> {
   const labels = imageLabels(
     req.sources.map((s) => s.role),
-    req.likenessNames
+    req.likenessNames,
+    req.logoName
   );
   const models = imageModelChain(req.model);
   let refusals = 0;

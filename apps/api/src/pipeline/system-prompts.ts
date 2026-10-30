@@ -107,6 +107,7 @@ DIRECTIONS RULES
 - whyItFits: one line, at most 160 characters, linking the image to hook.claim.
 - identityCues: the main subject's cues this idea shows, copied exactly from identity; [] when
   none fit or identity is empty.
+- useLogo: false unless the user message has a BRAND LOGO note and it says the logo fits.
 - Rank 1 is the idea a reader of the headline connects to the story fastest that is still
   striking, accurate and fair.
 - Never put text, letters, numbers, logos, brand marks, charts with labels, or headlines
@@ -155,6 +156,7 @@ OUTPUT SHAPE
       "mustShow": [string],
       "whyItFits": string,
       "identityCues": [string],
+      "useLogo": boolean,
       "suggestedStyleSlug": string,
       "reason": string,
       "peopleDepicted": [{ "name": string, "how": "illustrated" | "symbolised" | "absent" }],

@@ -123,6 +123,7 @@ describe('cleaning what reaches the image prompt', () => {
     mustShow: ['a ticker river', 'a glass tower'],
     whyItFits: 'Calm market.',
     identityCues: ['Tata blue'],
+    useLogo: false,
     suggestedStyleSlug: 'ink-wash',
     reason: 'Calm.',
     peopleDepicted: [{ name: 'Noel Tata', how: 'symbolised' }],

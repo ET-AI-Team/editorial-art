@@ -12,6 +12,8 @@ export const BatchPlanEntry = z
     likenessIds: z.array(Id).max(2),
     peopleMode: z.enum(['illustrated', 'symbolised', 'none']),
     seriesSourceOptionId: Id.nullable(),
+    /** The main subject's official logo, when this option's direction asked for it and every gate allowed it. */
+    brandLogoId: Id.nullable().default(null),
   })
   .strict();
 export type BatchPlanEntry = z.infer<typeof BatchPlanEntry>;

@@ -197,6 +197,8 @@ model Brief {
   hook               Json?
   /// ReadIdentity (shared-types model-outputs.ts): the main subject first, then up to two other key actors, each with safe visual cues. [] for a broad-topic story; null for briefs read before it existed.
   identity           Json?
+  /// The main subject's official logo (BrandLogo), found after the read when a direction asked for one and every gate allowed it.
+  brandLogoId        String?
   truncatedForRead   Boolean     @default(false)
   model              String
   createdAt          DateTime    @default(now()) @db.Timestamptz(3)
@@ -225,6 +227,8 @@ model Direction {
   whyItFits           String   @default("")
   /// Which of the main subject's identity cues the idea shows.
   identityCues        String[] @default([])
+  /// The idea asked for the main subject's official logo on its hero object (the read model decides, gates still apply).
+  useLogo             Boolean  @default(false)
   /// The reader test, 1 to 10: does a reader of the headline connect this idea to the story? Null when the test did not run.
   readerScore         Int?
   /// The reader test, 1 to 10: would a reader name the main subject from the idea alone? Null when the story has no single subject.
@@ -291,6 +295,10 @@ model Option {
   /// Same check, 1 to 10: without the headline, would a reader identify the company or person this is about? Null when the story has no single subject or the check failed.
   identityScore   Int?
   identityReason  String?
+  /// The official logo (BrandLogo) this option was given, if any: at most one, the main subject's.
+  brandLogoId     String?
+  /// The logo came out present, legible and faithful. Null when the option has no logo or the check did not say.
+  logoOk          Boolean?
   /// Story redraws so far. A batch redraws at most one option, once.
   storyRedraws    Int         @default(0)
   blockedReason   String?
@@ -307,6 +315,50 @@ model Option {
   @@unique([batchId, index])
   @@index([requestId, state])
   @@index([state, updatedAt])
+}
+
+/// A company's or brand's official logo, placed exactly as given on an image's hero object.
+/// Found on Wikidata (P154) and Wikimedia Commons, freely licensed only; an admin may later
+/// retire one or upload a replacement.
+model BrandLogo {
+  id          String          @id @default(uuid())
+  name        String
+  /// Names the read used for this brand, matched case- and accent-insensitively.
+  aliases     String[]        @default([])
+  /// The Wikidata item (Q-id) the logo was found on.
+  wikidataId  String?
+  /// Our stored PNG copy.
+  url         String
+  publicId    String?
+  width       Int?
+  height      Int?
+  /// LicenseShortName from Commons, for example "Public domain".
+  licence     String?
+  licenceUrl  String?
+  /// The author as Commons names them (Artist), as plain text.
+  credit      String?
+  /// The Commons file page the logo came from.
+  commonsPage String?
+  source      BrandLogoSource
+  status      BrandLogoStatus @default(ACTIVE)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+
+  @@index([wikidataId])
+  @@index([status])
+}
+
+enum BrandLogoSource {
+  /// The Wikidata logo image (P154), from Wikimedia Commons, credited in the pack.
+  WIKIMEDIA
+  /// Uploaded by an admin.
+  UPLOAD
+}
+
+enum BrandLogoStatus {
+  ACTIVE
+  /// Taken down by an admin: never used, and never looked up again for the same brand.
+  RETIRED
 }
 
 /// The sizes, alt text, caption and credit for a finalized option.

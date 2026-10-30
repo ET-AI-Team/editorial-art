@@ -82,6 +82,11 @@ const Schema = z
      * 'admins' lets only x-actor-role admin requests find and use them, 'all' lets everyone.
      */
     EA_REAL_PEOPLE: z.enum(['off', 'admins', 'all']).default('off'),
+    /**
+     * Official brand logos (pipeline/brand-logo.ts), gated like EA_REAL_PEOPLE: 'off' never places
+     * one, 'admins' only for x-actor-role admin requests, 'all' for everyone.
+     */
+    EA_BRAND_LOGOS: z.enum(['off', 'admins', 'all']).default('all'),
     /** Contact in the User-Agent of every Wikimedia call, as their policy asks: a monitored email or URL. */
     EA_WIKIMEDIA_CONTACT: z.string().min(3).max(200).default('https://github.com/ET-AI-Team/editorial-art'),
 

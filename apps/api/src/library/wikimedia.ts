@@ -16,7 +16,8 @@ import { fold } from '../pipeline/guard/sensitivity';
 
 const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
 const COMMONS_API = 'https://commons.wikimedia.org/w/api.php';
-const COMMONS_UPLOADS = 'https://upload.wikimedia.org/';
+/** Originals come from upload.wikimedia.org; scaled thumbnails (and SVG renders) from thumb.wikimedia.org. */
+const COMMONS_UPLOADS = ['https://upload.wikimedia.org/', 'https://thumb.wikimedia.org/'] as const;
 const CALL_TIMEOUT_MS = 5_000;
 const IMAGE_TIMEOUT_MS = 10_000;
 
@@ -46,15 +47,23 @@ const axiosJson: WikiJson = async (url, params) => {
 
 let http: WikiJson = axiosJson;
 
+const cacheResets: (() => void)[] = [];
+
+/** Lets another lookup built on these calls (library/logos.ts) drop its cache when the transport changes. */
+export function onWikimediaReset(fn: () => void): void {
+  cacheResets.push(fn);
+}
+
 /** Tests only: answer Wikidata and Commons calls from recorded responses. */
 export function setWikimediaHttpForTests(fn?: WikiJson): void {
   http = fn ?? axiosJson;
   cache.clear();
+  for (const reset of cacheResets) reset();
 }
 
 // ---- Wikidata shapes (only what is read) ---------------------------------------------------
 
-interface SearchHit {
+export interface SearchHit {
   id: string;
   label?: string;
   description?: string;
@@ -66,7 +75,7 @@ interface Snak {
   rank?: string;
 }
 
-interface Entity {
+export interface Entity {
   id: string;
   missing?: unknown;
   labels?: Record<string, { value: string }>;
@@ -119,14 +128,14 @@ export interface Resolution {
   alternatives: Candidate[];
 }
 
-function claimValues(entity: Entity, property: string): unknown[] {
+export function claimValues(entity: Entity, property: string): unknown[] {
   return (entity.claims?.[property] ?? [])
     .filter((s) => s.rank !== 'deprecated' && s.mainsnak?.snaktype === 'value')
     .map((s) => s.mainsnak?.datavalue?.value)
     .filter((v) => v !== undefined);
 }
 
-function itemIds(entity: Entity, property: string): string[] {
+export function itemIds(entity: Entity, property: string): string[] {
   return claimValues(entity, property)
     .map((v) => (v as { id?: string }).id)
     .filter((id): id is string => typeof id === 'string');
@@ -140,7 +149,7 @@ function bornYear(entity: Entity): number | null {
   return null;
 }
 
-function text(map: Record<string, { value: string }> | undefined): string {
+export function text(map: Record<string, { value: string }> | undefined): string {
   return map?.en?.value ?? map?.hi?.value ?? '';
 }
 
@@ -170,7 +179,7 @@ export function toWikiPerson(entity: Entity, searchRank: number): WikiPerson | n
 
 const HONORIFICS = new Set(['mr', 'mrs', 'ms', 'dr', 'shri', 'smt', 'sri', 'sir', 'justice', 'prof', 'professor']);
 const STOP = new Set(['the', 'of', 'and', 'for', 'ltd', 'limited', 'pvt', 'private', 'inc', 'co', 'corp', 'corporation', 'company', 'group', 'plc', 'llp', 'india', 'indian', 'its', 'former', 'new']);
-const INDIA = 'Q668';
+export const INDIA = 'Q668';
 
 export function nameTokens(name: string): string[] {
   return fold(name)
@@ -239,12 +248,12 @@ export function isMinor(bornYearValue: number | null, now = new Date()): boolean
 
 // ---- lookups -------------------------------------------------------------------------------
 
-async function search(name: string, language: string): Promise<SearchHit[]> {
+export async function search(name: string, language: string): Promise<SearchHit[]> {
   const res = (await http(WIKIDATA_API, { action: 'wbsearchentities', search: name, language, uselang: 'en', type: 'item', limit: String(SEARCH_LIMIT) })) as { search?: SearchHit[] };
   return res.search ?? [];
 }
 
-async function entities(ids: string[], props: string): Promise<Entity[]> {
+export async function entities(ids: string[], props: string): Promise<Entity[]> {
   if (!ids.length) return [];
   const res = (await http(WIKIDATA_API, { action: 'wbgetentities', ids: ids.join('|'), props, languages: 'en|hi' })) as { entities?: Record<string, Entity> | Entity[] };
   const all = res.entities ?? {};
@@ -380,7 +389,7 @@ export async function commonsImage(file: string): Promise<CommonsImage | null> {
     return null;
   }
   const thumbUrl = info.thumburl ?? info.url;
-  if (!thumbUrl?.startsWith(COMMONS_UPLOADS) || !info.descriptionurl) return null;
+  if (!thumbUrl || !COMMONS_UPLOADS.some((host) => thumbUrl.startsWith(host)) || !info.descriptionurl) return null;
   const licenceUrl = plainText(meta.LicenseUrl?.value, 300);
   return {
     thumbUrl,
@@ -395,5 +404,5 @@ export async function commonsImage(file: string): Promise<CommonsImage | null> {
 
 /** Downloads a Commons thumbnail, with the same User-Agent. */
 export function downloadCommonsImage(url: string): Promise<{ buffer: Buffer; width: number; height: number }> {
-  return fetchRemoteImage(url, { allow: [COMMONS_UPLOADS], headers: { 'User-Agent': wikimediaUserAgent() }, timeoutMs: IMAGE_TIMEOUT_MS, maxBytes: 15 * 1024 * 1024 });
+  return fetchRemoteImage(url, { allow: COMMONS_UPLOADS, headers: { 'User-Agent': wikimediaUserAgent() }, timeoutMs: IMAGE_TIMEOUT_MS, maxBytes: 15 * 1024 * 1024 });
 }

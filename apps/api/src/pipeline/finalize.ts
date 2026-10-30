@@ -32,22 +32,23 @@ async function render(ctx: OptionContext, prompt: string, preview: { url: string
   const { finalModel, finalImageSize } = await imageModels();
   const call = { requestId: ctx.request.id, optionId: ctx.option.id, stage: 'finalize' };
   const sources: SentImage[] = [{ role: 'preview', url: preview.url }, ...inputs.sources];
-  await db.option.update({ where: { id: ctx.option.id }, data: { finalInput: describeCall(finalModel, prompt, sources, imageLabels(sources.map((s) => s.role), ctx.likenessNames)) } });
-  const r = await routedImage(call, { stage: 'final', model: finalModel, imageSize: finalImageSize, prompt, images: [preview.image, ...inputs.images], sources, likenessNames: ctx.likenessNames });
+  await db.option.update({ where: { id: ctx.option.id }, data: { finalInput: describeCall(finalModel, prompt, sources, imageLabels(sources.map((s) => s.role), ctx.likenessNames, ctx.logo?.name)) } });
+  const r = await routedImage(call, { stage: 'final', model: finalModel, imageSize: finalImageSize, prompt, images: [preview.image, ...inputs.images], sources, likenessNames: ctx.likenessNames, logoName: ctx.logo?.name ?? null });
   await db.option.update({ where: { id: ctx.option.id }, data: { finalInput: r.sent } });
   return { image: await cropToAspect(r.result.image.buffer, 1), model: r.model, sent: r.sent };
 }
 
-async function judge(ctx: OptionContext, finalImage: Buffer, preview: ImageData): Promise<JudgeOutput> {
+async function judge(ctx: OptionContext, finalImage: Buffer, preview: ImageData, logo: ImageData | null): Promise<JudgeOutput> {
   const small = await sharp(finalImage).resize({ width: 1024, withoutEnlargement: true }).png().toBuffer();
+  const logoName = logo && ctx.logo ? ctx.logo.name : null;
   return chat(
     { stage: 'judge', requestId: ctx.request.id, optionId: ctx.option.id },
     {
       kind: 'judge',
       model: env().EA_JUDGE_MODEL,
       system: JUDGE_SYSTEM_PROMPT,
-      user: buildJudgeUser(likenessStyle(ctx.style, ctx.likenessNames), ctx.likenessNames.length > 0),
-      images: [{ buffer: small, mimeType: 'image/png' }, preview],
+      user: buildJudgeUser(likenessStyle(ctx.style, ctx.likenessNames), ctx.likenessNames.length > 0, logoName),
+      images: [{ buffer: small, mimeType: 'image/png' }, preview, ...(logoName && logo ? [logo] : [])],
       temperature: 0,
       maxTokens: 400,
     },
@@ -71,7 +72,7 @@ export async function runFinalize(optionId: string): Promise<void> {
     await db.option.update({ where: { id: ctx.option.id }, data: { finalAttempts: { increment: 1 } } });
     const prompt = buildFinalPrompt(basePrompt, { fixNote, refCount: inputs.refCount, brandColour: !!brandColourFor(ctx) });
     const { image, model } = await render(ctx, prompt, { url: ctx.option.previewUrl, image: preview }, inputs);
-    const verdict = await judge(ctx, image, preview);
+    const verdict = await judge(ctx, image, preview, inputs.logoImage);
     lastVerdict = verdict;
     if (judgePasses(verdict)) {
       maybeCrash('finalize');
@@ -86,7 +87,7 @@ export async function runFinalize(optionId: string): Promise<void> {
       await enqueue.pack({ optionId: ctx.option.id }, Date.now());
       return;
     }
-    fixNote = verdict.notes && verdict.notes !== 'ok' ? verdict.notes : 'remove any text, logos or artefacts';
+    fixNote = verdict.notes && verdict.notes !== 'ok' ? verdict.notes : ctx.logo ? 'remove any text, logos or artefacts other than the official logo' : 'remove any text, logos or artefacts';
   }
   await failFinal(ctx.option.id, 'The full-quality image did not pass its checks. Try again, or pick another option.', lastVerdict);
 }

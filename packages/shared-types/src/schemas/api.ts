@@ -128,6 +128,12 @@ export const OptionDto = z.object({
   references: z.array(OptionReference),
   /** A real person's face still looked unlike their reference photos after one redraw. */
   likenessWeak: z.boolean(),
+  /**
+   * The official logo this option was given came out present, legible and faithful (true), or
+   * still garbled or missing after the one redraw (false). Null when the option has no logo or it
+   * was not checked.
+   */
+  logoOk: z.boolean().nullable(),
 });
 export type OptionDto = z.infer<typeof OptionDto>;
 
@@ -144,6 +150,8 @@ export const DirectionDto = z.object({
   whyItFits: z.string(),
   /** Which of the main subject's identity cues the idea shows. Empty when none fit, or for directions read before it existed. */
   identityCues: z.array(z.string()),
+  /** The idea asked for the main subject's official logo on its hero object. */
+  useLogo: z.boolean(),
   style: StyleRef,
   reason: z.string(),
 });
@@ -559,7 +567,7 @@ export type AdminStatsResponse = z.infer<typeof AdminStatsResponse>;
 
 // ---- what was sent to the image model (admin) ----------------------------------------------
 
-export const SentImageRole = z.enum(['preview', 'reference', 'likeness', 'series']);
+export const SentImageRole = z.enum(['preview', 'reference', 'likeness', 'series', 'logo']);
 export type SentImageRole = z.infer<typeof SentImageRole>;
 /** One attached image: what it is, where it is stored, and the label sent right before it. */
 export const SentImage = z.object({ role: SentImageRole, url: z.string(), label: z.string().optional() });
@@ -584,6 +592,8 @@ export const OptionStory = z.object({
   readerScore: z.number().int().min(1).max(10).nullable(),
   readerIdentityScore: z.number().int().min(1).max(10).nullable(),
   readerReason: z.string().nullable(),
+  /** The official logo came out faithful; null when the option has no logo. */
+  logoOk: z.boolean().nullable(),
 });
 export type OptionStory = z.infer<typeof OptionStory>;
 

@@ -1,6 +1,7 @@
 import type { BatchPlanEntry, IdentityEntry, SentImageRole } from '@editorial-art/shared-types';
 import type { StyleView } from '../library/styles';
 import { ruleSummary } from '../library/styles';
+import { logoLine } from './brand-logo';
 import { heroBrandColour } from './identity';
 import { realLikenessClause } from './likeness-check';
 import type { PeopleEntry } from './read';
@@ -22,6 +23,8 @@ export interface PreviewPromptInput {
   refCount: number;
   likenessPhotoCount: number;
   series: boolean;
+  /** The brand whose official logo is attached for the hero object; null or absent without one. */
+  logoName?: string | null;
 }
 
 function peopleClause(input: PreviewPromptInput): string {
@@ -75,9 +78,12 @@ export const STORY_HEADING = 'THE STORY (must be clear at thumbnail size):';
 
 function rulesBlock(input: PreviewPromptInput): string {
   const photo = input.style.safety.photoreal;
-  return `Rules that always apply: no text, letters, numbers, words, captions, logos, brand marks, watermarks, signatures, ${
+  const logo = input.logoName;
+  return `Rules that always apply: ${logo ? `apart from the attached official ${logo} logo on the hero object, ` : ''}no text, letters, numbers, words, captions, ${logo ? 'other ' : ''}logos, brand marks, watermarks, signatures, ${
     INTERFACE_STYLE_SLUGS.has(input.style.slug) ? 'readable labels or writing on any interface element,' : 'user-interface elements,'
-  } or charts with labels anywhere in the image. Names in the story say who it is about: never write them, their initials or their logos.\n${
+  } or charts with labels anywhere in the image. ${
+    logo ? 'Names in the story say who it is about: never write them or their initials, and add no logo but the attached one.' : 'Names in the story say who it is about: never write them, their initials or their logos.'
+  }\n${
     photo ? 'This is a photographic image of objects and places only. No people.' : 'Do not make it look like a photograph.'
   }\nDo not depict any real news event as if it were photographed.`;
 }
@@ -96,6 +102,7 @@ function storyBlock(input: PreviewPromptInput): string {
     `${STORY_HEADING} ${input.direction.idea}`,
     must.length ? `Must show, the first as the focal point:\n${must.map((m) => `- ${m}`).join('\n')}` : `Focal point: ${input.direction.title}.`,
     colour ? `The hero object (${hero}) carries the subject's brand colour (${colour}), so the subject is recognisable; everything else follows ${palette}.` : '',
+    input.logoName ? logoLine(input.logoName, hero) : '',
     hook?.tension ? `The tension to make visible: ${hook.tension}.` : '',
     hook?.indianContext ? `Indian context: ${hook.indianContext}.` : '',
     `Mood: ${input.brief.tone}, suited to a ${input.brief.desk} story.`,
@@ -112,6 +119,7 @@ function editorBlock(input: PreviewPromptInput): string {
 function otherAttachments(input: PreviewPromptInput): string {
   return [
     input.likenessPhotoCount ? `The ${input.likenessPhotoCount} attached reference photos of ${input.likenessNames.join(' and ')} are provided only so the illustrated figure is recognisable. Take nothing about style from them.` : '',
+    input.logoName ? `The attached official ${input.logoName} logo is the only branding allowed in the image; take nothing about style from it.` : '',
     input.series ? 'The attached earlier illustration from this series shows the look the two must share. Match its palette and visual language closely so the two read as a set, while showing this new scene.' : '',
   ]
     .filter(Boolean)
@@ -158,8 +166,8 @@ export function buildFinalPrompt(previewPrompt: string, opts: { fixNote?: string
     .join('\n\n');
 }
 
-/** One label per attached image, in order, so the model can tell a style reference from a photo. */
-export function imageLabels(roles: SentImageRole[], likenessNames: string[]): string[] {
+/** One label per attached image, in order, so the model can tell a style reference from a photo or a logo. */
+export function imageLabels(roles: SentImageRole[], likenessNames: string[], logoName?: string | null): string[] {
   const total = (role: SentImageRole) => roles.filter((r) => r === role).length;
   const seen = new Map<SentImageRole, number>();
   return roles.map((role) => {
@@ -174,17 +182,22 @@ export function imageLabels(roles: SentImageRole[], likenessNames: string[]): st
         return `Reference photo ${n} of ${total('likeness')} of ${likenessNames.join(' and ') || 'the person'}, for likeness only, not style:`;
       case 'series':
         return 'Earlier illustration in this series (match its palette and visual language):';
+      case 'logo':
+        return `Official logo of ${logoName || 'the subject'} (reproduce it exactly on the hero object, not a style reference):`;
     }
   });
 }
 
-export function buildJudgeUser(style: StyleView, likenessUsed: boolean): string {
+export function buildJudgeUser(style: StyleView, likenessUsed: boolean, logoName: string | null = null): string {
+  const logo = logoName
+    ? `\nImage 3 is the official ${logoName} logo, the only branding allowed, on the hero object. The official ${logoName} logo or wordmark is allowed; any other text is not. Report that logo only in allowedLogoSeen, never in hasText or hasLogoOrWatermark.\n`
+    : '';
   return `House style: ${style.label}. Style rules: ${ruleSummary(style.ruleSheet)}
 Safety flags: allowsPeople=${style.safety.allowsPeople}, allowsRealPeople=${style.safety.allowsRealPeople},
 photoreal=${style.safety.photoreal}. Approved likeness used: ${likenessUsed}.
 
 Image 1 is the final. Image 2 is the preview the editor chose.
-
+${logo}
 Return:
 {
   "hasText": boolean,
@@ -196,10 +209,10 @@ Return:
   "ideaClarity": 1 | 2 | 3 | 4 | 5,
   "composition": 1 | 2 | 3 | 4 | 5,
   "photorealNewsRisk": boolean,
-  "realPersonLikenessRisk": boolean,
+  "realPersonLikenessRisk": boolean,${logoName ? '\n  "allowedLogoSeen": boolean,' : ''}
   "notes": string
 }
-hasText: any readable letters, numbers, currency signs or text-like marks anywhere in image 1, including on objects, signs, coins and screens. hasLogoOrWatermark: any logo, brand mark, watermark or signature in image 1. anatomyOk: faces, hands and bodies look natural (true if no people). matchesPreview: same composition, subject and colours as image 2. onStyle: how well image 1 follows the house style. appeal: how attractive and finished image 1 is as magazine-quality artwork. ideaClarity: how quickly a reader gets the idea of image 1. composition: one clear focal point, balanced negative space, no clutter, still reads as a small thumbnail. photorealNewsRisk: could image 1 be mistaken for a real news photograph of an event. realPersonLikenessRisk: looks like a specific real person while no approved likeness was used. notes: at most 300 characters, what to fix, or "ok".`;
+hasText: any readable letters, numbers, currency signs or text-like marks anywhere in image 1, including on objects, signs, coins and screens${logoName ? ', other than the allowed logo' : ''}. hasLogoOrWatermark: any logo, brand mark, watermark or signature in image 1${logoName ? ' other than the allowed logo. allowedLogoSeen: the allowed logo appears in image 1' : ''}. anatomyOk: faces, hands and bodies look natural (true if no people). matchesPreview: same composition, subject and colours as image 2. onStyle: how well image 1 follows the house style. appeal: how attractive and finished image 1 is as magazine-quality artwork. ideaClarity: how quickly a reader gets the idea of image 1. composition: one clear focal point, balanced negative space, no clutter, still reads as a small thumbnail. photorealNewsRisk: could image 1 be mistaken for a real news photograph of an event. realPersonLikenessRisk: looks like a specific real person while no approved likeness was used. notes: at most 300 characters, what to fix, or "ok".`;
 }
 
 

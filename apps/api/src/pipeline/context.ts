@@ -17,6 +17,8 @@ export interface OptionContext {
   style: StyleView;
   entry: BatchPlanEntry;
   likenessNames: string[];
+  /** The official logo this option places on its hero object; null when it has none or it was retired since. */
+  logo: { id: string; name: string; url: string } | null;
 }
 
 function loadOption(optionId: string) {
@@ -35,6 +37,7 @@ export async function loadOptionContext(optionId: string): Promise<OptionContext
   const plan = BatchPlan.parse(option.batch.directionPlan);
   const entry = plan.entries.find((e) => e.index === option.index)!;
   const likenesses = entry.likenessIds.length ? await db.likeness.findMany({ where: { id: { in: entry.likenessIds }, status: 'ACTIVE' } }) : [];
+  const logo = option.brandLogoId ? await db.brandLogo.findFirst({ where: { id: option.brandLogoId, status: 'ACTIVE' }, select: { id: true, name: true, url: true } }) : null;
   return {
     option,
     request: { id: option.request.id, publicId: option.request.publicId, status: option.request.status, prompt: option.request.prompt, actorUserId: option.request.actorUserId, title: option.request.articleTitle },
@@ -60,6 +63,7 @@ export async function loadOptionContext(optionId: string): Promise<OptionContext
     style,
     entry,
     likenessNames: likenesses.map((l) => l.name),
+    logo,
   };
 }
 
@@ -93,9 +97,11 @@ export interface InputImages {
   refCount: number;
   likenessPhotoCount: number;
   series: boolean;
+  /** The official logo sent with the option, also shown to the checks; null without one. */
+  logoImage: ImageData | null;
 }
 
-/** Reference images, likeness photos and (for a series) the earlier final, in prompt order. */
+/** Reference images, likeness photos, the official logo and (for a series) the earlier final, in prompt order. */
 export async function inputImages(ctx: OptionContext): Promise<InputImages> {
   const refs = await db.styleReference.findMany({ where: { id: { in: ctx.option.referenceIds } }, select: { id: true, url: true } });
   const ordered = ctx.option.referenceIds.map((id) => refs.find((r) => r.id === id)).filter((r): r is { id: string; url: string } => !!r);
@@ -105,20 +111,24 @@ export async function inputImages(ctx: OptionContext): Promise<InputImages> {
   const photoUrls = likenesses.flatMap((l) => (l.photos as { url: string }[]).slice(0, 2).map((p) => p.url));
   const photos = await Promise.all(photoUrls.map((u) => fetchCached(u, 768)));
 
+  const logoImage = ctx.logo ? await fetchCached(ctx.logo.url, 1024) : null;
+
   let series: { url: string; image: ImageData } | null = null;
   if (ctx.entry.seriesSourceOptionId) {
     const source = await db.option.findUnique({ where: { id: ctx.entry.seriesSourceOptionId }, select: { finalUrl: true } });
     if (source?.finalUrl) series = { url: source.finalUrl, image: await fetchCached(source.finalUrl, 1024) };
   }
   return {
-    images: [...refImages, ...photos, ...(series ? [series.image] : [])],
+    images: [...refImages, ...photos, ...(logoImage ? [logoImage] : []), ...(series ? [series.image] : [])],
     sources: [
       ...ordered.map((r) => ({ role: 'reference' as const, url: r.url })),
       ...photoUrls.map((url) => ({ role: 'likeness' as const, url })),
+      ...(logoImage && ctx.logo ? [{ role: 'logo' as const, url: ctx.logo.url }] : []),
       ...(series ? [{ role: 'series' as const, url: series.url }] : []),
     ],
     refCount: refImages.length,
     likenessPhotoCount: photos.length,
     series: !!series,
+    logoImage,
   };
 }

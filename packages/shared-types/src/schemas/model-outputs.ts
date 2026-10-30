@@ -104,6 +104,12 @@ export const ReadDirection = z
     whyItFits: z.string().min(1).max(200),
     /** Which of the main subject's identity cues this idea shows; empty when none fit or there is no single subject. */
     identityCues: IdentityCues,
+    /**
+     * Whether the main subject's official logo would genuinely help here, on a hero object that
+     * really carries it (a SIM card, a router box, a store front). The model decides; code still
+     * applies it only when the gate allows, the story is not sensitive and a logo was found.
+     */
+    useLogo: z.boolean().default(false),
     suggestedStyleSlug: Slug,
     reason: z.string().max(120),
     peopleDepicted: z.array(z.object({ name: z.string().max(120), how: PeopleHow }).strict()).max(6),
@@ -158,6 +164,11 @@ export const JudgeOutput = z
     composition: z.number().int().min(1).max(5).default(3),
     photorealNewsRisk: z.boolean(),
     realPersonLikenessRisk: z.boolean(),
+    /**
+     * The official logo the option was given appears. It is reported here, never in hasText or
+     * hasLogoOrWatermark, so any other writing or mark still fails the final.
+     */
+    allowedLogoSeen: z.boolean().default(false),
     notes: z.string().max(300),
   })
   .strict();
@@ -323,6 +334,8 @@ export const ReaderRewrite = z
     mustShow: MustShow,
     whyItFits: z.string().min(1).max(200),
     identityCues: IdentityCues,
+    /** Asked for only when a logo is possible; absent keeps the original direction's choice. */
+    useLogo: z.boolean().optional(),
   })
   .strict();
 export type ReaderRewrite = z.infer<typeof ReaderRewrite>;
@@ -356,7 +369,8 @@ export type ReaderTestOutput = z.infer<typeof ReaderTestOutput>;
 /**
  * Does a finished preview tell this article's story at a glance? 1 to 10, with a reason. When the
  * story has a single main subject, identityScore (1 to 10) says whether a reader would identify
- * that company or person without the headline; null when there is none.
+ * that company or person without the headline; null when there is none. When the option was given
+ * an official logo, logoOk says whether it came out present, legible and faithful; null otherwise.
  */
 export const StoryCheck = z
   .object({
@@ -364,12 +378,16 @@ export const StoryCheck = z
     identityScore: z.number().int().min(1).max(10).nullable().default(null),
     reason: z.string().max(300),
     identityReason: z.string().max(300).default(''),
+    logoOk: z.boolean().nullable().default(null),
   })
   .strict();
 export type StoryCheck = z.infer<typeof StoryCheck>;
 
-/** The cheap check every preview gets: is there any writing on it? */
-export const PreviewTextCheck = z.object({ hasText: z.boolean(), where: z.string().max(120) }).strict();
+/**
+ * The cheap check every preview gets: is there any writing on it? With an official logo, hasText
+ * covers only writing other than that logo, and allowedLogo says whether the logo appears.
+ */
+export const PreviewTextCheck = z.object({ hasText: z.boolean(), allowedLogo: z.boolean().default(false), where: z.string().max(120) }).strict();
 export type PreviewTextCheck = z.infer<typeof PreviewTextCheck>;
 
 export function exemplarPasses(s: ExemplarScreen): boolean {

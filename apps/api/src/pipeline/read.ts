@@ -11,12 +11,14 @@ import { BadModelOutput } from '../providers';
 import { chat, maybeCrash } from './ai';
 import { createBatch } from './batches';
 import { emitRequestStatus } from './events';
+import { brandLogoNote, logoEligible } from './brand-logo';
 import { mainSubject } from './identity';
 import { runReaderTest, type ReaderVerdict } from './reader-test';
 import { finalSensitivity, fold, realFacesAllowedFor, sensitivityFloor } from './guard/sensitivity';
 import { stripInstructions } from './guard/strip';
 import { activeLikenessNames, pauseForPeople, realFacesNote } from './people';
 import { realPeopleAllowed } from '../lib/real-people';
+import { brandLogoFor } from '../library/logos';
 import { moveRequest } from './state';
 import { READ_SYSTEM_PROMPT } from './system-prompts';
 
@@ -166,7 +168,7 @@ export function applyReaderVerdict(
   verdict: ReaderVerdict | undefined
 ): { d: ReadDirection; readerScore: number | null; readerIdentityScore: number | null; readerReason: string | null } {
   if (!verdict) return { d, readerScore: null, readerIdentityScore: null, readerReason: null };
-  const next = verdict.rewrite ? cleanDirection({ ...d, ...verdict.rewrite }) : d;
+  const next = verdict.rewrite ? cleanDirection({ ...d, ...verdict.rewrite, useLogo: verdict.rewrite.useLogo ?? d.useLogo }) : d;
   return { d: next, readerScore: verdict.score, readerIdentityScore: verdict.identityScore, readerReason: stripInstructions(verdict.reason, 300).text || null };
 }
 
@@ -201,7 +203,7 @@ export async function runRead(requestId: string): Promise<void> {
           kind: 'read',
           model: env().EA_READ_MODEL,
           system: READ_SYSTEM_PROMPT,
-          user: realFacesNote(request.actorRole) + buildReadUserMessage({
+          user: realFacesNote(request.actorRole) + brandLogoNote(request.actorRole) + buildReadUserMessage({
             styles,
             chosenStyle: chosen,
             likenesses,
@@ -263,6 +265,8 @@ export async function runRead(requestId: string): Promise<void> {
 
   const hook = cleanHook(answer.hook);
   const identity = cleanIdentity(answer.identity);
+  const subject = mainSubject(identity);
+  const logoPossible = logoEligible({ level, actorRole: request.actorRole, subject });
   const verdicts = await runReaderTest(
     { stage: 'reader_test', requestId: request.id },
     {
@@ -270,11 +274,20 @@ export async function runRead(requestId: string): Promise<void> {
       claim: hook.claim || answer.thesis,
       tone: answer.tone,
       level,
-      subject: mainSubject(identity),
+      subject,
+      logo: logoPossible,
       directions: directions.map(({ d }) => ({ ...d, people: d.peopleDepicted.filter((p) => p.how !== 'absent').map((p) => p.name) })),
     }
   );
-  const tested = directions.map((x) => ({ ...applyReaderVerdict(x.d, verdicts?.find((v) => v.rank === x.d.rank)), style: x.style }));
+  const tested = directions.map((x) => {
+    const verdict = applyReaderVerdict(x.d, verdicts?.find((v) => v.rank === x.d.rank));
+    return { ...verdict, d: { ...verdict.d, useLogo: logoPossible && verdict.d.useLogo }, style: x.style };
+  });
+
+  // The main subject's official logo, looked up only when a direction will use it. Never fatal.
+  const india = answer.desk !== 'world' || answer.entities.places.some((p) => /india|delhi|mumbai|bengaluru|bangalore|chennai|kolkata|hyderabad/i.test(p));
+  const logo = logoPossible && subject && tested.some((t) => t.d.useLogo) ? await brandLogoFor(subject.name, { india }) : null;
+  if (logo) logger.info({ eaRequestId: request.publicId, brandLogoId: logo.id, name: logo.name }, 'brand_logo_found');
 
   const reasons = [...new Set([...answer.sensitivity.reasons, ...(floor.level === level && level !== 'NONE' ? ['flagged by newsroom rules'] : [])])].slice(0, 4);
   await db.$transaction(async (tx) => {
@@ -293,6 +306,7 @@ export async function runRead(requestId: string): Promise<void> {
         altTextSeed: answer!.altTextSeed,
         hook,
         identity,
+        brandLogoId: logo?.id ?? null,
         truncatedForRead: forRead.truncated,
         model: env().EA_READ_MODEL,
         directions: {
@@ -303,6 +317,7 @@ export async function runRead(requestId: string): Promise<void> {
             mustShow: d.mustShow,
             whyItFits: d.whyItFits,
             identityCues: d.identityCues,
+            useLogo: d.useLogo,
             readerScore,
             readerIdentityScore,
             readerReason,

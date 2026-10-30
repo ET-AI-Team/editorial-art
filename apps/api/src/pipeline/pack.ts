@@ -9,6 +9,7 @@ import { styleById } from '../library/styles';
 import { BadModelOutput, providers } from '../providers';
 import { chat, maybeCrash } from './ai';
 import { emitOptionFailed, emitPackReady } from './events';
+import { logoCredits } from './brand-logo';
 import { faceCredits, withFaceCredits } from './people';
 import { ALT_TEXT_SYSTEM, buildAltTextUser } from './prompts';
 import { moveOption } from './state';
@@ -56,8 +57,9 @@ export async function runPack(optionId: string): Promise<void> {
   const side = Math.min(MAX_SIDE, meta.width ?? MAX_SIDE, meta.height ?? MAX_SIDE);
   const square = await sharp(master).resize(side, side, { fit: 'cover' }).png().toBuffer();
 
-  // A face drawn from a Commons photo credits that photo: "Face reference: {author}, Wikimedia Commons, {licence}".
-  const credit = withFaceCredits(env().EA_CREDIT_LINE, await faceCredits(option.likenessIds));
+  // A face drawn from a Commons photo credits that photo: "Face reference: {author}, Wikimedia Commons, {licence}";
+  // an official logo credits its owner: "Logo: {name} (trademark of its owner), via Wikimedia Commons".
+  const credit = withFaceCredits(env().EA_CREDIT_LINE, [...(await faceCredits(option.likenessIds)), ...(await logoCredits(option.brandLogoId))]);
   const [png, webp, jpg] = await Promise.all([toPng(square, { copyright: credit }), toWebp(square, { quality: QUALITY }), toJpeg(square, { quality: QUALITY, copyright: credit })]);
   const folder = `${env().EA_CLOUDINARY_FOLDER}/${option.request.publicId}/pack/${option.id}`;
   const [p, w, j] = await Promise.all([

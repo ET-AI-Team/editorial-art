@@ -7,6 +7,7 @@ import { artistKey, chooseByArtist, chooseReferences, nearestApprovedReferences,
 import { stylesByIds, styleAllowed, type StyleView } from '../library/styles';
 import { enqueue } from '../queues/queues';
 import { embedText } from './ai';
+import { logoForOption } from './brand-logo';
 import { emitBatchCreated, emitRequestStatus } from './events';
 import { realFacesAllowedFor } from './guard/sensitivity';
 import { moveRequest } from './state';
@@ -90,6 +91,8 @@ interface DirectionRow {
   title: string;
   suggestedStyleId: string;
   peopleDepicted: PeopleEntry[];
+  /** Absent in plans made without the stored direction (peopleToConfirm). */
+  useLogo?: boolean;
 }
 
 /** The direction and style for each of the four options (pure, see the table in Step 6.4.1). */
@@ -204,6 +207,9 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
     }
   }
 
+  // The brief's logo, if it is still in use (an admin may have retired it since the read).
+  const briefLogo = brief.brandLogoId ? await db.brandLogo.findFirst({ where: { id: brief.brandLogoId, status: 'ACTIVE' }, select: { id: true } }) : null;
+
   const styles = await stylesByIds(slots.map((s) => s.styleId));
   for (const slot of slots) {
     const style = styles.get(slot.styleId);
@@ -225,7 +231,8 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
     const direction = directions.find((x) => x.id === slot.directionId)!;
     const people = peopleFor(direction.peopleDepicted, styles.get(slot.styleId)!, level);
     const likenessIds = input.realPeople === false ? [] : people.likenessIds;
-    const entry = { index, directionId: slot.directionId, styleId: slot.styleId, likenessIds, peopleMode: people.mode, seriesSourceOptionId };
+    const brandLogoId = logoForOption({ briefLogoId: briefLogo?.id ?? null, useLogo: !!direction.useLogo, level, actorRole: request.actorRole });
+    const entry = { index, directionId: slot.directionId, styleId: slot.styleId, likenessIds, peopleMode: people.mode, seriesSourceOptionId, brandLogoId };
     if (chosenRefs) {
       // The editor's choice: exactly these, in this order, with no embedding or artist pick.
       entries.push({ ...entry, referenceIds: chosenRefs });
@@ -270,6 +277,7 @@ export async function createBatch(input: CreateBatchInput): Promise<{ batchId: s
             styleId: e.styleId,
             referenceIds: e.referenceIds,
             likenessIds: e.likenessIds,
+            brandLogoId: e.brandLogoId,
           })),
         },
       },

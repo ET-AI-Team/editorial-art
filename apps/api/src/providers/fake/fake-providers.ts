@@ -30,6 +30,10 @@ import { BadModelOutput, ProviderRefusal, ProviderTimeout, ProviderUnavailable, 
  *                         subject's cues; the rewrite's identity scores 9
  *   FAKE_IDENTITY_LOW     the story check scores the "house" idea's identity 3 the first time, 8 after
  *   FAKE_IDENTITY_MISSING the story check answers without an identity score
+ *   FAKE_NO_LOGO          the read asks for no logo anywhere (by default, with a BRAND LOGO note,
+ *                         direction 1 asks for one)
+ *   FAKE_LOGO_GARBLED     the story check finds the "chess kings" logo garbled the first time only
+ *   FAKE_LOGO_ALWAYS_GARBLED the story check finds that logo garbled every time
  *
  * Without those, the read's main subject is "Example Group", and the story check scores the three
  * fake ideas 7, 9 and 8 for story and the same for identity, so a batch reorders.
@@ -173,9 +177,17 @@ function fakeStoryScore(user: string, first: boolean): { storyScore: number; rea
   return { storyScore: 9, reason: 'The calm ticker against the storm tells it.' };
 }
 
+/** The logo is judged only when the check is shown one; by default it came out faithful. */
+function fakeLogo(user: string, first: boolean): { logoOk?: boolean } {
+  if (!user.includes('"logoOk": boolean')) return {};
+  if (user.includes('FAKE_LOGO_ALWAYS_GARBLED')) return { logoOk: false };
+  if (user.includes('FAKE_LOGO_GARBLED')) return { logoOk: !first };
+  return { logoOk: true };
+}
+
 /** Identity is scored only when the check is told the subject; by default it matches the story score. */
-function fakeStory(user: string, first: boolean): { storyScore: number; identityScore?: number; reason: string; identityReason?: string } {
-  const story = fakeStoryScore(user, first);
+function fakeStory(user: string, first: boolean): { storyScore: number; identityScore?: number; reason: string; identityReason?: string; logoOk?: boolean } {
+  const story = { ...fakeStoryScore(user, first), ...fakeLogo(user, first) };
   if (!user.includes('THE SUBJECT:') || user.includes('FAKE_IDENTITY_MISSING')) return story;
   if (user.includes(HOUSE) && user.includes('FAKE_IDENTITY_LOW')) {
     return first
@@ -275,6 +287,7 @@ function fakeAnswer(p: ChatJsonParams): unknown {
                 mustShow: [['two chess kings', 'a crack across the table'], ['a calm ticker river', 'a glass tower', 'a storm cloud'], ['an old house', 'one dark window'] ][i]!,
                 whyItFits: 'Shows the dispute and the calm market at once.',
                 identityCues: p.user.includes('FAKE_TOPIC') ? [] : [[], ['the Example Tower, a stepped white tower in Mumbai'], ['Example Group teal #0F7C7C']][i]!,
+                useLogo: i === 0 && p.user.includes('BRAND LOGO') && !p.user.includes('FAKE_NO_LOGO'),
                 suggestedStyleSlug: slugs[i % slugs.length]!,
                 reason: 'Fits an analytical markets story.',
                 peopleDepicted: people.length ? [{ name: 'Asha Rao', how: 'illustrated' }] : [],
@@ -294,6 +307,7 @@ function fakeAnswer(p: ChatJsonParams): unknown {
         composition: 4,
         photorealNewsRisk: false,
         realPersonLikenessRisk: false,
+        allowedLogoSeen: p.user.includes('allowedLogoSeen'),
         notes: p.user.includes('FAKE_JUDGE_FAIL') ? 'There is lettering on the table.' : '',
       };
     case 'alt_text':
@@ -305,7 +319,7 @@ function fakeAnswer(p: ChatJsonParams): unknown {
         mood: 'calm',
       };
     case 'preview_text':
-      return { hasText: false, where: '' };
+      return p.user.includes('"allowedLogo"') ? { hasText: false, allowedLogo: true, where: '' } : { hasText: false, where: '' };
     case 'reader_test':
       return fakeReader(p.user);
     case 'likeness_check':
