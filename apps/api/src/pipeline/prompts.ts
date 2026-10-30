@@ -126,15 +126,29 @@ function otherAttachments(input: PreviewPromptInput): string {
     .join('\n');
 }
 
+const BARE_LOGO_BAN = /^(no )?(logos?|brand marks?)$/i;
+
+/**
+ * The style's negatives and the direction's avoid list. With an official logo attached, a bare
+ * "logos" or "no logos" would contradict the logo line, so it becomes "other logos".
+ */
+function avoidLine(input: PreviewPromptInput): string {
+  if (!input.logoName) return `Avoid: ${[input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ')}.`;
+  const items = [...input.style.ruleSheet.negative.split(','), ...input.direction.avoid].map((a) => a.trim()).filter(Boolean).map((a) => (BARE_LOGO_BAN.test(a) ? 'other logos' : a));
+  return `Avoid: ${items.filter((a, i) => items.findIndex((b) => b.toLowerCase() === a.toLowerCase()) === i).join(', ')}.`;
+}
+
 /**
  * Content first, then style, then craft, then rules: the story and who may appear, the editor's
  * ask, the references (or the style in words), the craft bar, the rules and the avoid list.
  */
 export function buildPreviewPrompt(input: PreviewPromptInput): string {
-  const avoid = `Avoid: ${[input.style.ruleSheet.negative, ...input.direction.avoid].filter(Boolean).join(', ')}.`;
+  const avoid = avoidLine(input);
+  // A style's words may ban logos outright; the attached official logo is the one exception.
+  const core = `${input.style.ruleSheet.promptCore}${input.logoName ? ` The attached official ${input.logoName} logo is the only exception to any rule against logos.` : ''}`;
   const style = input.refCount
-    ? [brandColourFor(input) ? STYLE_REFERENCES_BLOCK_BRAND : STYLE_REFERENCES_BLOCK, `Technique in words (the references win wherever they differ): ${input.style.ruleSheet.promptCore}`]
-    : [`Style: ${input.style.ruleSheet.promptCore}`];
+    ? [brandColourFor(input) ? STYLE_REFERENCES_BLOCK_BRAND : STYLE_REFERENCES_BLOCK, `Technique in words (the references win wherever they differ): ${core}`]
+    : [`Style: ${core}`];
   return [
     storyBlock(input),
     peopleClause(input),

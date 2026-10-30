@@ -130,6 +130,18 @@ describe('image prompts', () => {
     });
   });
 
+  test('with an official logo attached, no bare logo ban is left to contradict it; without one, the lists are unchanged', () => {
+    const logoStyle = { ...base.style, ruleSheet: { ...base.style.ruleSheet, promptCore: 'Flat shapes. No text, letters, numbers or logos.', negative: 'text, logos, watermarks, photograph' } };
+    const input = { ...base, style: logoStyle, direction: { ...base.direction, avoid: ['no logos', 'no text', 'no flags'] } };
+    const p = buildPreviewPrompt({ ...input, logoName: 'Jio' });
+    expect(p).toContain('Avoid: text, other logos, watermarks, photograph, no text, no flags.');
+    expect(p).toContain('No text, letters, numbers or logos. The attached official Jio logo is the only exception to any rule against logos.');
+    expect(p).toContain('Place the attached official Jio logo on the hero object');
+    const plain = buildPreviewPrompt(input);
+    expect(plain).toContain('Avoid: text, logos, watermarks, photograph, no logos, no text, no flags.');
+    expect(plain).not.toContain('only exception');
+  });
+
   test('a direction or brief read before the hook existed still gets a story block, with its title as the focal point', () => {
     const p = buildPreviewPrompt({ ...base, direction: { title: 'Two kings', idea: 'Two chess kings face each other.', avoid: [], peopleDepicted: [] }, brief: { tone: 'analytical', desk: 'markets' } });
     expect(p.startsWith(`${STORY_HEADING} Two chess kings face each other.\nFocal point: Two kings.`)).toBe(true);
